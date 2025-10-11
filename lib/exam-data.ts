@@ -10,6 +10,33 @@ export interface Question {
   audioUrl?: string
 }
 
+export interface ReadingText {
+  titel: string
+  inhalt: string
+}
+
+export interface ReadingQuestion {
+  frageNummer: number
+  frageText: string
+  format: "Richtig/Falsch" | "Multiple-Choice"
+  optionen?: Record<string, string>
+  loesung: string
+}
+
+export interface ReadingPart {
+  teilNummer: number
+  anweisung: string
+  texte: ReadingText[]
+  fragen: ReadingQuestion[]
+}
+
+export interface ReadingExamData {
+  level: string
+  modul: string
+  title: string
+  teile: ReadingPart[]
+}
+
 export interface ExamConfig {
   level: CEFRLevel
   title: string
@@ -118,7 +145,215 @@ export function getExamQuestions(level: CEFRLevel, module: ExamModule): Question
   }
 }
 
+export function convertReadingDataToQuestions(readingData: ReadingExamData): Question[] {
+  const questions: Question[] = []
+  let questionId = 1
+
+  readingData.teile.forEach(teil => {
+    teil.fragen.forEach(frage => {
+      const context = teil.texte.length > 0
+        ? `${teil.anweisung}\n\n${teil.texte.map(text =>
+            text.titel ? `${text.titel}\n${text.inhalt}` : text.inhalt
+          ).join('\n\n')}`
+        : teil.anweisung
+
+      if (frage.format === "Multiple-Choice" && frage.optionen) {
+        const options = Object.values(frage.optionen)
+        const correctAnswerKey = frage.loesung
+        const correctAnswerIndex = Object.keys(frage.optionen).indexOf(correctAnswerKey)
+
+        questions.push({
+          id: questionId++,
+          type: "multiple-choice",
+          context: context,
+          question: frage.frageText,
+          options: options,
+          correctAnswer: correctAnswerIndex
+        })
+      } else if (frage.format === "Richtig/Falsch") {
+        questions.push({
+          id: questionId++,
+          type: "multiple-choice",
+          context: context,
+          question: frage.frageText,
+          options: ["Richtig", "Falsch"],
+          correctAnswer: frage.loesung === "Richtig" ? 0 : 1
+        })
+      }
+    })
+  })
+
+  return questions
+}
+
 function getLesenQuestions(level: CEFRLevel): Question[] {
+  // For now, return the sample A1 data if level is A1
+  // This can be extended to fetch actual data from backend
+  if (level === "A1") {
+    const sampleA1Data: ReadingExamData = {
+      level: "A1",
+      modul: "Lesen",
+      title: "Goethe-Zertifikat A1 - Lesen",
+      teile: [
+        {
+          teilNummer: 1,
+          anweisung: "Lesen Sie die kurzen Nachrichten und entscheiden Sie, ob die Aussagen richtig oder falsch sind.",
+          texte: [
+            {
+              titel: "",
+              inhalt: "1. Hallo Anna, ich komme heute später nach Hause. Bis dann! \n2. Liebe Frau Müller, Ihr Termin am Montag um 10 Uhr ist bestätigt.\n3. Achtung! Das Schwimmbad ist heute geschlossen.\n4. Guten Morgen! Unser Geschäft hat von 9 bis 18 Uhr geöffnet."
+            }
+          ],
+          fragen: [
+            {
+              frageNummer: 1,
+              frageText: "Anna kommt heute pünktlich nach Hause.",
+              format: "Richtig/Falsch",
+              loesung: "Falsch"
+            },
+            {
+              frageNummer: 2,
+              frageText: "Der Termin bei Frau Müller ist am Montag um 10 Uhr.",
+              format: "Richtig/Falsch",
+              loesung: "Richtig"
+            },
+            {
+              frageNummer: 3,
+              frageText: "Das Schwimmbad ist heute geöffnet.",
+              format: "Richtig/Falsch",
+              loesung: "Falsch"
+            },
+            {
+              frageNummer: 4,
+              frageText: "Das Geschäft schließt um 18 Uhr.",
+              format: "Richtig/Falsch",
+              loesung: "Richtig"
+            },
+            {
+              frageNummer: 5,
+              frageText: "Der Brief beginnt mit 'Hallo Anna'.",
+              format: "Richtig/Falsch",
+              loesung: "Richtig"
+            }
+          ]
+        },
+        {
+          teilNummer: 2,
+          anweisung: "Lesen Sie die Beschreibungen von Webseiten und wählen Sie die richtige Antwort aus.",
+          texte: [
+            {
+              titel: "Webseite 1",
+              inhalt: "Willkommen bei SportAktiv! Hier finden Sie Infos zu Kursen, Trainingsplänen und Outdoor-Aktivitäten."
+            },
+            {
+              titel: "Webseite 2",
+              inhalt: "Kochenleicht.de bietet einfache Rezepte, Tipps fürs Backen und eine große Auswahl an vegetarischen Gerichten."
+            },
+            {
+              titel: "Webseite 3",
+              inhalt: "Auf ReisenWelt entdecken Sie die besten Reiseziele mit Hotelbewertungen und Reisetipps."
+            }
+          ],
+          fragen: [
+            {
+              frageNummer: 6,
+              frageText: "Welche Webseite findet man einfache Rezepte?",
+              format: "Multiple-Choice",
+              optionen: {
+                a: "SportAktiv",
+                b: "Kochenleicht.de",
+                c: "ReisenWelt",
+                d: "Keine der Webseiten"
+              },
+              loesung: "b"
+            },
+            {
+              frageNummer: 7,
+              frageText: "Wo gibt es Informationen zu Outdoor-Aktivitäten?",
+              format: "Multiple-Choice",
+              optionen: {
+                a: "Kochenleicht.de",
+                b: "ReisenWelt",
+                c: "SportAktiv",
+                d: "Keine der Webseiten"
+              },
+              loesung: "c"
+            },
+            {
+              frageNummer: 8,
+              frageText: "Welche Webseite ist für Reiseinformationen?",
+              format: "Multiple-Choice",
+              optionen: {
+                a: "ReisenWelt",
+                b: "SportAktiv",
+                c: "Kochenleicht.de",
+                d: "Keine der Webseiten"
+              },
+              loesung: "a"
+            },
+            {
+              frageNummer: 9,
+              frageText: "Auf Kochenleicht.de findet man Trainingspläne.",
+              format: "Richtig/Falsch",
+              loesung: "Falsch"
+            },
+            {
+              frageNummer: 10,
+              frageText: "SportAktiv bietet Kurse an.",
+              format: "Richtig/Falsch",
+              loesung: "Richtig"
+            }
+          ]
+        },
+        {
+          teilNummer: 3,
+          anweisung: "Lesen Sie die Schilder und entscheiden Sie, ob die Aussagen richtig oder falsch sind.",
+          texte: [
+            {
+              titel: "",
+              inhalt: "1. \"Bitte keine Hunde im Park!\"\n2. \"Fahrradweg – nur für Fahrräder.\"\n3. \"Reserviert – Parkplätze für Gäste.\"\n4. \"Notausgang – bitte freihalten!\""
+            }
+          ],
+          fragen: [
+            {
+              frageNummer: 11,
+              frageText: "Hunde dürfen im Park frei herumlaufen.",
+              format: "Richtig/Falsch",
+              loesung: "Falsch"
+            },
+            {
+              frageNummer: 12,
+              frageText: "Der Fahrradweg ist für Fußgänger.",
+              format: "Richtig/Falsch",
+              loesung: "Falsch"
+            },
+            {
+              frageNummer: 13,
+              frageText: "Die Parkplätze sind für Gäste reserviert.",
+              format: "Richtig/Falsch",
+              loesung: "Richtig"
+            },
+            {
+              frageNummer: 14,
+              frageText: "Der Notausgang soll blockiert werden.",
+              format: "Richtig/Falsch",
+              loesung: "Falsch"
+            },
+            {
+              frageNummer: 15,
+              frageText: "Im Park sind Hunde verboten.",
+              format: "Richtig/Falsch",
+              loesung: "Richtig"
+            }
+          ]
+        }
+      ]
+    }
+
+    return convertReadingDataToQuestions(sampleA1Data)
+  }
+
+  // Fallback to original logic for other levels
   const config = examConfigs[level]
   const numberOfQuestions = Math.min(config.modules.Lesen.tasks * 5, 20) // 5 questions per task, max 20
 

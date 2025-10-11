@@ -278,11 +278,11 @@ export function ExamInterface({ level, module, onComplete, onBack }: ExamInterfa
                   className={`h-8 w-8 rounded-full text-xs font-semibold transition-all ${
                     index === currentQuestionIndex
                       ? "bg-accent text-accent-foreground scale-110"
-                      : answers[index]
+                      : answers[index] !== undefined
                       ? "bg-primary text-primary-foreground"
-                      : "bg-muted text-muted-foreground hover:bg-muted/80"
+                      : "bg-white border-2 border-muted text-muted-foreground hover:bg-muted/20"
                   }`}
-                  title={`Question ${index + 1}${answers[index] ? ' (Answered)' : ''}`}
+                  title={`Question ${index + 1}${answers[index] !== undefined ? ' (Answered)' : ''}`}
                 >
                   {index + 1}
                 </button>

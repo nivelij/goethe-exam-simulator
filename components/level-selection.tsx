@@ -62,47 +62,49 @@ export function LevelSelection({ onLevelSelect }: LevelSelectionProps) {
               return (
                 <Card
                   key={level}
-                  className="group cursor-pointer border-2 transition-all hover:border-primary hover:shadow-lg bg-card"
+                  className="group cursor-pointer border-2 transition-all hover:border-primary hover:shadow-lg bg-card flex flex-col h-full"
                   onClick={() => onLevelSelect(level)}
                 >
-                  <div className="p-6">
-                    <div className="mb-4 flex items-start justify-between">
-                      <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary text-lg font-bold text-primary-foreground">
-                        {level}
-                      </div>
-                      <div className="text-right">
-                        <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                          {config.passScore}% to pass
+                  <div className="p-6 flex flex-col flex-grow">
+                    <div className="flex-grow">
+                      <div className="mb-4 flex items-start justify-between">
+                        <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary text-lg font-bold text-primary-foreground">
+                          {level}
+                        </div>
+                        <div className="text-right">
+                          <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                            {config.passScore}% to pass
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-accent">
-                      {category}
-                    </div>
-                    <h3 className="mb-2 text-xl font-bold text-card-foreground">{config.title}</h3>
-                    <p className="mb-4 text-sm text-muted-foreground">{config.subtitle}</p>
-                    <p className="mb-6 text-muted-foreground">{config.description}</p>
+                      <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-accent">
+                        {category}
+                      </div>
+                      <h3 className="mb-2 text-xl font-bold text-card-foreground">{config.title}</h3>
+                      <p className="mb-4 text-sm text-muted-foreground">{config.subtitle}</p>
+                      <p className="mb-6 text-muted-foreground">{config.description}</p>
 
-                    <div className="space-y-2 mb-6">
-                      {Object.entries(config.modules).map(([moduleName, moduleConfig]) => {
-                        const Icon = moduleIcons[moduleName as keyof typeof moduleIcons]
-                        return (
-                          <div key={moduleName} className="flex items-center justify-between text-sm">
-                            <div className="flex items-center gap-2">
-                              <Icon className="h-4 w-4 text-muted-foreground" />
-                              <span>{moduleName}</span>
+                      <div className="space-y-2 mb-6">
+                        {Object.entries(config.modules).map(([moduleName, moduleConfig]) => {
+                          const Icon = moduleIcons[moduleName as keyof typeof moduleIcons]
+                          return (
+                            <div key={moduleName} className="flex items-center justify-between text-sm">
+                              <div className="flex items-center gap-2">
+                                <Icon className="h-4 w-4 text-muted-foreground" />
+                                <span>{moduleName}</span>
+                              </div>
+                              <div className="flex items-center gap-1 text-muted-foreground">
+                                <Clock className="h-3 w-3" />
+                                <span>{moduleConfig.duration} min</span>
+                              </div>
                             </div>
-                            <div className="flex items-center gap-1 text-muted-foreground">
-                              <Clock className="h-3 w-3" />
-                              <span>{moduleConfig.duration} min</span>
-                            </div>
-                          </div>
-                        )
-                      })}
+                          )
+                        })}
+                      </div>
                     </div>
 
-                    <Button className="w-full" variant="default">
+                    <Button className="w-full mt-auto" variant="default">
                       Start {level} Exam
                     </Button>
                   </div>

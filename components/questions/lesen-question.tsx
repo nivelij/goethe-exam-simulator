@@ -26,7 +26,7 @@ export function LesenQuestion({ question, answer, onAnswer }: LesenQuestionProps
 
       <div>
         <h4 className="mb-4 text-lg font-semibold text-card-foreground">{question.question}</h4>
-        <RadioGroup value={answer?.toString()} onValueChange={(value) => onAnswer(Number.parseInt(value))}>
+        <RadioGroup value={answer !== undefined ? answer.toString() : ""} onValueChange={(value) => onAnswer(Number.parseInt(value))}>
           <div className="space-y-3">
             {question.options?.map((option, index) => (
               <div
