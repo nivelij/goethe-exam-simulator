@@ -1,0 +1,7 @@
+{
+    "queue_id": "abcdefg",
+    "payload": {
+        "category": "read",
+        "level": "A1"
+    }
+}
