@@ -40,7 +40,7 @@ def get_next_pending_job():
                 cur.execute("""
                     SELECT ej.id, ej.queue_id, ej.category, re.level
                     FROM exam_jobs ej
-                    JOIN read_exam re ON ej.queue_id = re.gen_id
+                    JOIN read_exam re ON ej.queue_id = re.queue_id
                     WHERE ej.status = 'not_started'
                     LIMIT 1
                     FOR UPDATE
@@ -55,13 +55,6 @@ def get_next_pending_job():
                         "UPDATE exam_jobs SET status = 'in_progress' WHERE id = %s",
                         (job_id,)
                     )
-
-                    # Update read_exam gen_status to in_progress
-                    cur.execute(
-                        "UPDATE read_exam SET gen_status = 'in_progress' WHERE gen_id = %s",
-                        (queue_id,)
-                    )
-                    conn.commit()
 
                     logger.info(f"Retrieved and marked job as in_progress: id={job_id}, queue_id={queue_id}, category={category}, level={level}")
                     return {"id": job_id, "queue_id": queue_id, "category": category, "level": level}
@@ -86,11 +79,13 @@ def update_job_completed(queue_id, payload):
                     (queue_id,)
                 )
 
-                # Update read_exam with payload and status
+                # Update read_exam with the generated payload
+                payload_json = json.dumps(payload) if isinstance(payload, (dict, list)) else payload
                 cur.execute(
-                    "UPDATE read_exam SET gen_status = 'done', payload = %s WHERE gen_id = %s",
-                    (json.dumps(payload), queue_id)
+                    "UPDATE read_exam SET payload = %s WHERE queue_id = %s",
+                    (payload_json, queue_id)
                 )
+
                 conn.commit()
                 logger.info(f"Successfully updated job to completed: queue_id={queue_id}")
 
@@ -109,13 +104,6 @@ def update_job_failed(queue_id, error_message):
                 cur.execute(
                     "UPDATE exam_jobs SET status = 'failed' WHERE queue_id = %s",
                     (queue_id,)
-                )
-
-                # Update read_exam with error payload and status
-                error_payload = {"error": str(error_message)}
-                cur.execute(
-                    "UPDATE read_exam SET gen_status = 'failed', payload = %s WHERE gen_id = %s",
-                    (json.dumps(error_payload), queue_id)
                 )
                 conn.commit()
                 logger.info(f"Successfully updated job to failed: queue_id={queue_id}")

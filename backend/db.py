@@ -1,268 +1,140 @@
-import json
 import os
+import psycopg2
 import logging
-import traceback
-import uuid
-import boto3
-from db import insert_read_exam, insert_exam_job, update_participant_results, get_job_result
+import json
+from contextlib import contextmanager
 
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+logger = logging.getLogger(__name__)
 
-CORS_HEADERS = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type,Authorization",
-    "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS"
-}
+DATABASE_URL = os.environ["DATABASE_URL"]
 
-ECS_CLUSTER_NAME = "goethe-exam-cluster"
-ECS_TASK_DEFINITION = "goethe-exam-worker"
-
-ecs_client = boto3.client('ecs')
-ec2_client = boto3.client('ec2')
-
-def build_response(status_code, body, additional_headers=None):
+@contextmanager
+def get_db_connection():
     """
-    Build standardized response with CORS headers
+    Context manager for database connections
     """
-    headers = CORS_HEADERS.copy()
-    if additional_headers:
-        headers.update(additional_headers)
+    conn = None
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        yield conn
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"Database error: {e}")
+        raise
+    finally:
+        if conn:
+            conn.close()
 
-    return {
-        'statusCode': status_code,
-        'headers': headers,
-        'body': json.dumps(body) if body else ''
-    }
-
-
-
-def get_default_subnets():
+def insert_read_exam(queue_id, level):
     """
-    Get default VPC subnets for ECS tasks
+    Insert a new record into the read_exam table
     """
     try:
-        # Get default VPC
-        vpcs = ec2_client.describe_vpcs(Filters=[{'Name': 'isDefault', 'Values': ['true']}])
-        if not vpcs['Vpcs']:
-            raise Exception("No default VPC found")
-
-        default_vpc_id = vpcs['Vpcs'][0]['VpcId']
-
-        # Get subnets in default VPC
-        subnets = ec2_client.describe_subnets(
-            Filters=[{'Name': 'vpc-id', 'Values': [default_vpc_id]}]
-        )
-
-        subnet_ids = [subnet['SubnetId'] for subnet in subnets['Subnets']]
-        logger.info(f"Found default subnets: {subnet_ids}")
-        return subnet_ids
-
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO read_exam(queue_id, level) VALUES (%s, %s)",
+                    (queue_id, level)
+                )
+                conn.commit()
+                logger.info(f"Successfully inserted read_exam record: queue_id={queue_id}, level={level}")
     except Exception as e:
-        logger.error(f"Error getting default subnets: {e}")
+        logger.error(f"Failed to insert read_exam record: {e}")
         raise
 
-
-
-
-def lambda_handler(event, context):
+def get_job_result(queue_id):
     """
-    AWS Lambda handler for API Gateway requests
+    Retrieve job result by queue_id from read_exam table
+    Returns: dict with payload, or None if not found
     """
-    logger.info(f"Received event: {json.dumps(event, default=str)}")
-
     try:
-        # Get HTTP method and path
-        http_method = event.get('httpMethod', '')
-        path = event.get('path', '')
-        logger.info(f"Processing request: {http_method} {path}")
-
-        # Handle OPTIONS (preflight) request
-        if http_method == "OPTIONS":
-            logger.info("Handling OPTIONS preflight request")
-            return build_response(200, {})
-
-        # Handle GET /read endpoint (retrieve by queue_id)
-        if http_method == 'GET' and path == '/read':
-            logger.info("Handling GET /read endpoint - retrieve by queue_id")
-            # Get query parameters
-            query_params = event.get('queryStringParameters') or {}
-            queue_id = query_params.get('queue_id')
-            logger.info(f"Query parameters: {query_params}")
-
-            if not queue_id:
-                logger.warning("Missing required parameter: queue_id")
-                return build_response(400, {
-                    'error': 'Missing required parameter: queue_id'
-                })
-
-            try:
-                result = get_job_result(queue_id)
-
-                if result is None:
-                    logger.info(f"Queue ID not found: {queue_id}")
-                    return build_response(404, {
-                        'error': 'Queue ID not found'
-                    })
-
-                return build_response(200, {
-                    'payload': result['payload']
-                })
-
-            except Exception as e:
-                logger.error(f"Error retrieving job result: {str(e)}")
-                logger.error(f"Full traceback: {traceback.format_exc()}")
-                return build_response(500, {
-                    'error': 'Failed to retrieve job result'
-                })
-
-        if http_method == 'PUT' and path == '/read':
-            logger.info("Handling PUT /read endpoint - create exam job and start ECS task")
-            query_params = event.get('queryStringParameters') or {}
-            level = query_params.get('level')
-            logger.info(f"Query parameters: {query_params}")
-
-            if not level:
-                return build_response(400, {
-                    'error': 'Missing required parameter: level'
-                })
-
-            valid_levels = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
-            if level not in valid_levels:
-                logger.warning(f"Invalid level parameter: {level}. Valid levels: {valid_levels}")
-                return build_response(400, {
-                    'error': f'Invalid level. Must be one of: {", ".join(valid_levels)}'
-                })
-
-            try:
-                queue_id = str(uuid.uuid4())
-                insert_read_exam(queue_id, level)
-                insert_exam_job(queue_id, 'read')
-                subnets = get_default_subnets()
-
-                response = ecs_client.run_task(
-                    cluster=ECS_CLUSTER_NAME,
-                    taskDefinition=ECS_TASK_DEFINITION,
-                    launchType='FARGATE',
-                    networkConfiguration={
-                        'awsvpcConfiguration': {
-                            'subnets': subnets,
-                            'assignPublicIp': 'ENABLED'
-                        }
-                    }
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT payload FROM read_exam WHERE queue_id = %s AND payload IS NOT NULL",
+                    (queue_id,)
                 )
+                result = cur.fetchone()
 
-                task_arn = response['tasks'][0]['taskArn']
-                logger.info(f"Successfully started ECS task: {task_arn}")
+                if result:
+                    payload = result[0]
 
-                return build_response(200, {
-                    'queue_id': queue_id,
-                    'task_arn': task_arn
-                })
-            except Exception as e:
-                logger.error(f"Full traceback: {traceback.format_exc()}")
-                return build_response(500, {'error': f'Failed to create exam job: {str(e)}'})
+                    # Parse JSON payload if it exists and is a string
+                    parsed_payload = None
+                    if payload:
+                        try:
+                            # Check if payload is already a dict or if it's a JSON string
+                            if isinstance(payload, str):
+                                parsed_payload = json.loads(payload)
+                            else:
+                                parsed_payload = payload  # Already parsed
+                        except json.JSONDecodeError as e:
+                            logger.error(f"Failed to parse payload JSON: {e}")
+                            parsed_payload = payload  # Return raw payload if JSON parsing fails
 
-        # Handle PATCH /read endpoint (update participant results)
-        if http_method == 'PATCH' and path == '/read':
-            logger.info("Handling PATCH /read endpoint - update participant results")
-            query_params = event.get('queryStringParameters') or {}
-            queue_id = query_params.get('queue_id')
-            logger.info(f"Query parameters: {query_params}")
-
-            if not queue_id:
-                logger.warning("Missing required parameter: queue_id")
-                return build_response(400, {
-                    'error': 'Missing required parameter: queue_id'
-                })
-
-            try:
-                # Parse request body
-                body = event.get('body')
-                if not body:
-                    logger.warning("Missing request body")
-                    return build_response(400, {
-                        'error': 'Missing request body'
-                    })
-
-                # Handle both string and dict body
-                if isinstance(body, str):
-                    request_data = json.loads(body)
+                    return {
+                        'payload': parsed_payload
+                    }
                 else:
-                    request_data = body
-
-                logger.info(f"Request data: {request_data}")
-
-                # Extract required fields
-                participant_answers = request_data.get('participant_answers')
-                score = request_data.get('score')
-                is_pass = request_data.get('is_pass')
-
-                # Validate required fields
-                if participant_answers is None:
-                    return build_response(400, {
-                        'error': 'Missing required field: participant_answers'
-                    })
-
-                if score is None:
-                    return build_response(400, {
-                        'error': 'Missing required field: score'
-                    })
-
-                if is_pass is None:
-                    return build_response(400, {
-                        'error': 'Missing required field: is_pass'
-                    })
-
-                # Validate data types
-                if not isinstance(participant_answers, list):
-                    return build_response(400, {
-                        'error': 'participant_answers must be an array'
-                    })
-
-                if not isinstance(score, (int, float)):
-                    return build_response(400, {
-                        'error': 'score must be a number'
-                    })
-
-                if not isinstance(is_pass, bool):
-                    return build_response(400, {
-                        'error': 'is_pass must be a boolean'
-                    })
-
-                # Update participant results in database
-                success = update_participant_results(queue_id, participant_answers, score, is_pass)
-
-                if not success:
-                    return build_response(404, {
-                        'error': 'Queue ID not found or already updated'
-                    })
-
-                return build_response(200, {
-                    'message': 'Participant results updated successfully',
-                    'queue_id': queue_id,
-                    'score': score,
-                    'is_pass': is_pass
-                })
-
-            except json.JSONDecodeError:
-                logger.error("Invalid JSON in request body")
-                return build_response(400, {
-                    'error': 'Invalid JSON in request body'
-                })
-            except Exception as e:
-                logger.error(f"Error updating participant results: {str(e)}")
-                logger.error(f"Full traceback: {traceback.format_exc()}")
-                return build_response(500, {
-                    'error': 'Failed to update participant results'
-                })
-
-        return build_response(404, {
-            'error': f'Endpoint not found: {http_method} {path}'
-        })
+                    logger.info(f"No job found for queue_id: {queue_id}")
+                    return None
 
     except Exception as e:
-        logger.error(f"Full traceback: {traceback.format_exc()}")
-        return build_response(500, {
-            'error': f'Internal server error: {str(e)}'
-        })
+        logger.error(f"Failed to get job result: {e}")
+        raise
+
+def insert_exam_job(queue_id, category):
+    """
+    Insert a new record into the exam_jobs table
+
+    Args:
+        queue_id (str): The queue/job ID
+        category (str): The category of the exam job (e.g., 'read', 'write')
+    """
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO exam_jobs(queue_id, category, status) VALUES (%s, %s, 'not_started')",
+                    (queue_id, category)
+                )
+                conn.commit()
+                logger.info(f"Successfully inserted exam_job record: queue_id={queue_id}, category={category}")
+    except Exception as e:
+        logger.error(f"Failed to insert exam_job record: {e}")
+        raise
+
+def update_participant_results(queue_id, participant_answers, score, is_pass):
+    """
+    Update participant results in the read_exam table
+
+    Args:
+        queue_id (str): The queue ID
+        participant_answers (list): Array of participant answers
+        score (int/float): The participant's score
+        is_pass (bool): Whether the participant passed
+    """
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                # Convert participant_answers to JSON string if it's not already
+                answers_json = json.dumps(participant_answers) if isinstance(participant_answers, (list, dict)) else participant_answers
+
+                cur.execute("""
+                    UPDATE read_exam
+                    SET participant_answers = %s, score = %s, is_pass = %s
+                    WHERE queue_id = %s
+                """, (answers_json, score, is_pass, queue_id))
+
+                if cur.rowcount == 0:
+                    logger.warning(f"No record found to update for queue_id: {queue_id}")
+                    return False
+
+                conn.commit()
+                logger.info(f"Successfully updated participant results for queue_id={queue_id}, score={score}, is_pass={is_pass}")
+                return True
+
+    except Exception as e:
+        logger.error(f"Failed to update participant results: {e}")
+        raise
