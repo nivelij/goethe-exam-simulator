@@ -1,0 +1,27 @@
+{
+  "evaluation": {
+    "geschätztePunktzahl": 45,
+    "zusammenfassung": "Teil 1 wurde größtenteils korrekt ausgefüllt, jedoch enthält das Sprachfeld einen Formfehler. Die Nachricht in Teil 2 ist unpassend, da sie das Thema der Geburtstagseinladung nicht erfüllt und in formellem Register geschrieben wurde.",
+    "bewertungsKriterien": [
+      {
+        "kriterium": "Aufgabenerfüllung",
+        "bewertung": "Teilweise erfüllt",
+        "kommentar": "Im Formular (Teil 1) wurden alle Felder ausgefüllt, jedoch ist \"Englische\" als Sprache grammatikalisch nicht korrekt (korrekt: \"Englisch\") und teils unpassende Zuordnung der Informationen (Geburtsort wurde als Land, nicht Stadt eingetragen). In Teil 2 wurde die Aufgabe nicht erfüllt: Der Text ist eine formelle Anfrage für ein Hotelzimmer statt einer Geburtstagseinladung an einen Freund oder eine Freundin.",
+        "vorschlag": "Achten Sie darauf, sämtliche Leitpunkte der Aufgabenstellung zu verwenden. Bei Nachrichten an Freunde/freundinnen informell bleiben und unbedingt Einladung, Ort, Datum sowie Aktivitäten nennen."
+      },
+      {
+        "kriterium": "Wortschatz",
+        "bewertung": "Ausreichend",
+        "kommentar": "Für A1-Niveau grundsätzlich verständliche Wörter verwendet. Im Formular sollte für 'Sprache' nur das Substantiv (z. B. 'Englisch' oder 'Deutsch') stehen. In Teil 2 wurde formelles Deutsch benutzt, das für diese Aufgabe ungeeignet ist.",
+        "vorschlag": "Üben Sie, einfachen und passenden Wortschatz für Einladungen und informelle Kommunikation auszuwählen. Beispiel: 'Ich lade dich zu meinem Geburtstag ein.'"
+      },
+      {
+        "kriterium": "Grammatik & Strukturen",
+        "bewertung": "Verbesserungswürdig",
+        "kommentar": "Teil 1: Formale kleine Fehler (\"Englische\"). Teil 2: Strukturen und Form sind für eine Einladung an Freunde nicht angemessen.",
+        "vorschlag": "Wiederholen Sie Beispielsätze für Einladungen: 'Ich feiere am 5. Mai meinen Geburtstag. Du bist herzlich eingeladen.' Üben Sie die richtige Verwendung von Substantiven und Adjektiven im Formular."
+      }
+    ],
+    "korrigierterText": "Teil 1:\nNachname: Hans\nVorname: Kristanto\nAdresse: Angela-Molitoris-Platz 1 München\nGeburtsdatum: 16.11.1988\nGeburtsort: **Indonesien** [Jakarta (Beispielstadt in Indonesien)]\nSprache: **Englische** [Englisch]\n\nTeil 2:\n**Sehr geehrte Damen und Herren,\n\nich möchte im November nach Berlin fahren. Ich brauche ein Einzelzimmer für eine Woche. Können Sie mir bitte Informationen über Hotels und Preise schicken?\n\nVielen Dank für Ihre Hilfe.\n\nMit freundlichen Grüßen\n[Your First Name] [Your Last Name]** [Hallo (Name), mein Geburtstag ist nächste Woche (z.B. am 20. April). Die Feier ist bei mir zu Hause um 18 Uhr. Wir essen Kuchen und spielen. Bitte komm! Liebe Grüße, (Ihr Name)]"
+  }
+}

@@ -4,7 +4,7 @@ import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Trophy, RotateCcw, ArrowLeft, CheckCircle2, XCircle, Award, Calendar, Target, Eye } from "lucide-react"
 import type { CEFRLevel, ExamModule } from "@/app/page"
-import { examConfigs } from "@/lib/exam-data"
+import { examConfigs, type WritingEvaluation } from "@/lib/exam-data"
 
 interface ResultsPageProps {
   level: CEFRLevel
@@ -15,14 +15,18 @@ interface ResultsPageProps {
   onBackToModules: () => void
   onReviewAnswers?: () => void
   hasReviewData?: boolean
+  writingEvaluation?: WritingEvaluation // For writing module
 }
 
-export function ResultsPage({ level, module, score, totalQuestions, onRestart, onBackToModules, onReviewAnswers, hasReviewData }: ResultsPageProps) {
+export function ResultsPage({ level, module, score, totalQuestions, onRestart, onBackToModules, onReviewAnswers, hasReviewData, writingEvaluation }: ResultsPageProps) {
   const examConfig = examConfigs[level]
   const moduleConfig = examConfig.modules[module]
-  const percentage = Math.round(score) // score is already a percentage
+
+  // Use writing evaluation data if available, otherwise use regular scoring
+  const percentage = writingEvaluation ? writingEvaluation.geschätztePunktzahl : Math.round(score)
+  const actualPoints = writingEvaluation ? Math.round((writingEvaluation.geschätztePunktzahl / 100) * moduleConfig.maxPoints) : Math.round((score / 100) * moduleConfig.maxPoints)
   const passed = percentage >= examConfig.passScore
-  const points = Math.round((percentage / 100) * moduleConfig.maxPoints)
+  const points = actualPoints
 
   return (
     <div className="min-h-screen bg-background">
@@ -106,7 +110,28 @@ export function ResultsPage({ level, module, score, totalQuestions, onRestart, o
                   </div>
                   <div className="mt-1 flex items-center justify-center gap-2 text-sm text-green-700">
                     <Calendar className="h-4 w-4" />
-                    <span>Completed on {new Date().toLocaleDateString()}</span>
+                    <span>Completed on {new Date().toLocaleDateString('de-DE')}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Writing Evaluation Summary */}
+            {writingEvaluation && (
+              <div className="mb-8 rounded-lg border-2 border-blue-200 bg-blue-50 p-6">
+                <div className="mb-4 flex items-center justify-center gap-2">
+                  <Trophy className="h-6 w-6 text-blue-600" />
+                  <span className="text-lg font-bold text-blue-800">
+                    Detailed Writing Evaluation
+                  </span>
+                </div>
+                <div className="space-y-4 text-center">
+                  <div className="text-blue-800">
+                    <span className="font-semibold">Score: {Math.round((writingEvaluation.geschätztePunktzahl / 100) * moduleConfig.maxPoints)}/{moduleConfig.maxPoints} points ({writingEvaluation.geschätztePunktzahl}%)</span>
+                  </div>
+                  <div className="rounded-lg bg-white p-4 text-left">
+                    <h4 className="mb-2 font-semibold text-blue-800">Summary:</h4>
+                    <p className="text-sm text-blue-700">{writingEvaluation.zusammenfassung}</p>
                   </div>
                 </div>
               </div>

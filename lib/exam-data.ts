@@ -138,6 +138,58 @@ export interface ExamData {
   queueId?: string
 }
 
+// Evaluation data types based on sample_resp.json
+export interface BewertungsKriterium {
+  kriterium: string
+  bewertung: string
+  kommentar: string
+  vorschlag: string
+}
+
+export interface WritingEvaluation {
+  geschätztePunktzahl: number
+  zusammenfassung: string
+  bewertungsKriterien: BewertungsKriterium[]
+  korrigierterText: string
+}
+
+export interface EvaluationResponse {
+  evaluation: WritingEvaluation
+}
+
+// Function to simulate getting writing evaluation from backend
+// In production, this would be an API call
+export function getWritingEvaluationSample(): EvaluationResponse {
+  return {
+    "evaluation": {
+      "geschätztePunktzahl": 45, // This represents 45% of max points (25), so 11.25 actual points
+      "zusammenfassung": "Teil 1 wurde größtenteils korrekt ausgefüllt, jedoch enthält das Sprachfeld einen Formfehler. Die Nachricht in Teil 2 ist unpassend, da sie das Thema der Geburtstagseinladung nicht erfüllt und in formellem Register geschrieben wurde.",
+      "bewertungsKriterien": [
+        {
+          "kriterium": "Aufgabenerfüllung",
+          "bewertung": "Teilweise erfüllt",
+          "kommentar": "Im Formular (Teil 1) wurden alle Felder ausgefüllt, jedoch ist \"Englische\" als Sprache grammatikalisch nicht korrekt (korrekt: \"Englisch\") und teils unpassende Zuordnung der Informationen (Geburtsort wurde als Land, nicht Stadt eingetragen). In Teil 2 wurde die Aufgabe nicht erfüllt: Der Text ist eine formelle Anfrage für ein Hotelzimmer statt einer Geburtstagseinladung an einen Freund oder eine Freundin.",
+          "vorschlag": "Achten Sie darauf, sämtliche Leitpunkte der Aufgabenstellung zu verwenden. Bei Nachrichten an Freunde/freundinnen informell bleiben und unbedingt Einladung, Ort, Datum sowie Aktivitäten nennen."
+        },
+        {
+          "kriterium": "Wortschatz",
+          "bewertung": "Ausreichend",
+          "kommentar": "Für A1-Niveau grundsätzlich verständliche Wörter verwendet. Im Formular sollte für 'Sprache' nur das Substantiv (z. B. 'Englisch' oder 'Deutsch') stehen. In Teil 2 wurde formelles Deutsch benutzt, das für diese Aufgabe ungeeignet ist.",
+          "vorschlag": "Üben Sie, einfachen und passenden Wortschatz für Einladungen und informelle Kommunikation auszuwählen. Beispiel: 'Ich lade dich zu meinem Geburtstag ein.'"
+        },
+        {
+          "kriterium": "Grammatik & Strukturen",
+          "bewertung": "Verbesserungswürdig",
+          "kommentar": "Teil 1: Formale kleine Fehler (\"Englische\"). Teil 2: Strukturen und Form sind für eine Einladung an Freunde nicht angemessen.",
+          "vorschlag": "Wiederholen Sie Beispielsätze für Einladungen: 'Ich feiere am 5. Mai meinen Geburtstag. Du bist herzlich eingeladen.' Üben Sie die richtige Verwendung von Substantiven und Adjektiven im Formular."
+        }
+      ],
+      "korrigierterText": "Teil 1:\nNachname: Hans\nVorname: Kristanto\nAdresse: Angela-Molitoris-Platz 1 München\nGeburtsdatum: 16.11.1988\nGeburtsort: **Indonesien** [Jakarta (Beispielstadt in Indonesien)]\nSprache: **Englische** [Englisch]\n\nTeil 2:\n**Sehr geehrte Damen und Herren,\n\nich möchte im November nach Berlin fahren. Ich brauche ein Einzelzimmer für eine Woche. Können Sie mir bitte Informationen über Hotels und Preise schicken?\n\nVielen Dank für Ihre Hilfe.\n\nMit freundlichen Grüßen\n[Your First Name] [Your Last Name]** [Hallo (Name), mein Geburtstag ist nächste Woche (z.B. am 20. April). Die Feier ist bei mir zu Hause um 18 Uhr. Wir essen Kuchen und spielen. Bitte komm! Liebe Grüße, (Ihr Name)]"
+    }
+  }
+}
+
+
 export async function getExamQuestions(level: CEFRLevel, module: ExamModule): Promise<ExamData> {
   if (module === "Lesen") {
     return await getLesenQuestions(level)
@@ -537,46 +589,56 @@ function getHörenQuestions(level: CEFRLevel): Question[] {
 }
 
 function getSchreibenQuestions(level: CEFRLevel): Question[] {
-  const config = examConfigs[level]
-  const tasks = config.modules.Schreiben.tasks
-
-  const writingTasks: Record<CEFRLevel, string[]> = {
-    A1: [
-      "Schreiben Sie eine kurze E-Mail an einen Freund über Ihr Wochenende (ca. 30 Wörter).",
-      "Füllen Sie ein einfaches Formular aus (Name, Adresse, Telefon, etc.)."
-    ],
-    A2: [
-      "Schreiben Sie eine E-Mail an einen Freund über Ihre Pläne (ca. 80 Wörter).",
-      "Schreiben Sie eine kurze Nachricht/SMS (ca. 40 Wörter)."
-    ],
-    B1: [
-      "Schreiben Sie eine persönliche E-Mail (ca. 100 Wörter).",
-      "Schreiben Sie einen kurzen Artikel für eine Zeitung (ca. 100 Wörter).",
-      "Schreiben Sie einen Brief mit einer Beschwerde (ca. 100 Wörter)."
-    ],
-    B2: [
-      "Schreiben Sie einen formellen Brief (ca. 150 Wörter).",
-      "Schreiben Sie einen Aufsatz zu einem aktuellen Thema (ca. 150 Wörter)."
-    ],
-    C1: [
-      "Schreiben Sie einen strukturierten Text zu einem komplexen Thema (ca. 200 Wörter).",
-      "Verfassen Sie eine Stellungnahme oder einen Kommentar (ca. 200 Wörter)."
-    ],
-    C2: [
-      "Schreiben Sie einen detaillierten Bericht oder eine Analyse (ca. 250 Wörter).",
-      "Verfassen Sie einen kritischen Aufsatz (ca. 250 Wörter)."
+  // Return structured writing exam data based on sample.json format
+  const MOCK_WRITING_EXAM = {
+    "level": level,
+    "modul": "Schreiben",
+    "title": `Goethe-Zertifikat ${level} - Schreiben`,
+    "teile": [
+      {
+        "teilNummer": 1,
+        "anweisung": "Füllen Sie das Formular aus. Schreiben Sie zu jeder Information ein oder zwei Wörter.",
+        "aufgabentyp": "Formular ausfüllen",
+        "kontext": "Sie möchten an einem Sprachkurs teilnehmen und füllen das Anmeldeformular aus.",
+        "leitpunkte": [
+          "Nachname",
+          "Vorname",
+          "Adresse",
+          "Geburtsdatum",
+          "Geburtsort",
+          "Sprache"
+        ],
+        "wortzahl": "1-2 Wörter pro Feld"
+      },
+      {
+        "teilNummer": 2,
+        "anweisung": "Schreiben Sie eine kurze Nachricht an Ihren Freund/Ihre Freundin. Laden Sie ihn/sie zu Ihrem Geburtstag ein. Schreiben Sie ca. 30 Wörter.",
+        "aufgabentyp": "Kurze Nachricht",
+        "kontext": "Ihr Geburtstag ist nächste Woche. Sie möchten Ihren Freund oder Ihre Freundin einladen.",
+        "leitpunkte": [
+          "Wann ist Ihr Geburtstag?",
+          "Wo ist die Feier?",
+          "Was machen Sie?"
+        ],
+        "wortzahl": "ca. 30 Wörter"
+      }
     ]
   }
 
+  // Generate separate questions for each Teil
   const questions: Question[] = []
-  for (let i = 0; i < tasks; i++) {
+
+  MOCK_WRITING_EXAM.teile.forEach((teil) => {
     questions.push({
-      id: i + 1,
+      id: teil.teilNummer,
       type: "text",
-      question: writingTasks[level][i] || `Schreibaufgabe ${i + 1} für ${level}`,
-      correctAnswer: "", // Will be evaluated differently
-    })
-  }
+      question: teil.anweisung,
+      context: `${teil.aufgabentyp}\n\n${teil.kontext}`,
+      correctAnswer: "",
+      // Add custom properties for writing exam
+      writingData: teil
+    } as Question & { writingData: any })
+  })
 
   return questions
 }
@@ -627,3 +689,4 @@ function getSprechenQuestions(level: CEFRLevel): Question[] {
 
   return questions
 }
+

@@ -6,6 +6,7 @@ import { ModuleSelection } from "@/components/module-selection"
 import { ExamInterface } from "@/components/exam-interface"
 import { ResultsPage } from "@/components/results-page"
 import { ReviewPage } from "@/components/review-page"
+import type { WritingEvaluation } from "@/lib/exam-data"
 
 interface ExamReviewData {
   questions: any[]
@@ -14,6 +15,7 @@ interface ExamReviewData {
   percentage: number
   isPass: boolean
   queueId?: string
+  writingEvaluation?: WritingEvaluation
 }
 
 export type CEFRLevel = "A1" | "A2" | "B1" | "B2" | "C1" | "C2"
@@ -86,6 +88,7 @@ export default function Home() {
         isPass={reviewData.isPass}
         onBack={handleBackFromReview}
         onRestart={handleRestart}
+        writingEvaluation={reviewData.writingEvaluation}
       />
     )
   }
@@ -101,6 +104,7 @@ export default function Home() {
         onBackToModules={handleBackToModules}
         onReviewAnswers={reviewData ? handleShowReview : undefined}
         hasReviewData={!!reviewData}
+        writingEvaluation={reviewData?.writingEvaluation}
       />
     )
   }

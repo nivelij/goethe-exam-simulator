@@ -6,7 +6,7 @@ import { Card } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { ArrowLeft, Clock, CheckCircle2, AlertTriangle, Play, Loader2 } from "lucide-react"
 import type { CEFRLevel, ExamModule } from "@/app/page"
-import { getExamQuestions, examConfigs, type Question, type ExamData } from "@/lib/exam-data"
+import { getExamQuestions, examConfigs, getWritingEvaluationSample, type Question, type ExamData, type WritingEvaluation } from "@/lib/exam-data"
 import { LesenQuestion } from "@/components/questions/lesen-question"
 import { HörenQuestion } from "@/components/questions/horen-question"
 import { SchreibenQuestion } from "@/components/questions/schreiben-question"
@@ -26,6 +26,7 @@ interface ExamReviewData {
   percentage: number
   isPass: boolean
   queueId?: string
+  writingEvaluation?: WritingEvaluation
 }
 
 export function ExamInterface({ level, module, onComplete, onBack }: ExamInterfaceProps) {
@@ -128,17 +129,34 @@ export function ExamInterface({ level, module, onComplete, onBack }: ExamInterfa
 
   const handleFinishExam = async () => {
     let score = 0
-    questions.forEach((q, index) => {
-      if (q.type === "multiple-choice" && answers[index] === q.correctAnswer) {
-        score++
-      } else if ((q.type === "text" || q.type === "speaking") && answers[index]) {
-        // For text/speaking, award points if there's an answer (simplified scoring)
-        score += 0.8 // Assuming 80% score for completion
-      }
-    })
+    let percentage = 0
+    let isPass = false
+    let writingEvaluation: WritingEvaluation | undefined
 
-    const percentage = Math.round((score / questions.length) * 100)
-    const isPass = percentage >= examConfig.passScore
+    // Handle writing module with detailed evaluation
+    if (module === "Schreiben") {
+      // Get writing evaluation from sample data (simulating backend call)
+      const evaluationResponse = getWritingEvaluationSample()
+      writingEvaluation = evaluationResponse.evaluation
+
+      // Use evaluation percentage directly (geschätztePunktzahl is already a percentage)
+      percentage = writingEvaluation.geschätztePunktzahl
+      isPass = percentage >= examConfig.passScore
+      score = Math.round((percentage / 100) * moduleConfig.maxPoints)
+    } else {
+      // Handle other modules with regular scoring
+      questions.forEach((q, index) => {
+        if (q.type === "multiple-choice" && answers[index] === q.correctAnswer) {
+          score++
+        } else if ((q.type === "text" || q.type === "speaking") && answers[index]) {
+          // For text/speaking, award points if there's an answer (simplified scoring)
+          score += 0.8 // Assuming 80% score for completion
+        }
+      })
+
+      percentage = Math.round((score / questions.length) * 100)
+      isPass = percentage >= examConfig.passScore
+    }
 
     // Prepare participant answers array
     const participantAnswers = questions.map((_, index) => answers[index] ?? null)
@@ -150,7 +168,8 @@ export function ExamInterface({ level, module, onComplete, onBack }: ExamInterfa
       score,
       percentage,
       isPass,
-      queueId: queueId || undefined
+      queueId: queueId || undefined,
+      writingEvaluation
     }
 
     // Call PATCH API to store results if we have a queueId (for Lesen module)

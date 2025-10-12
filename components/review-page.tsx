@@ -5,18 +5,20 @@ import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { ArrowLeft, CheckCircle2, XCircle, RotateCcw } from "lucide-react"
 import type { CEFRLevel, ExamModule } from "@/app/page"
-import type { Question } from "@/lib/exam-data"
+import type { Question, WritingEvaluation } from "@/lib/exam-data"
+import { WritingEvaluationPage } from "./writing-evaluation-page"
 
 interface ReviewPageProps {
   level: CEFRLevel
   module: ExamModule
-  questions: Question[]
-  answers: Record<number, any>
+  questions?: Question[]
+  answers?: Record<number, any>
   score: number
   percentage: number
   isPass: boolean
   onBack: () => void
   onRestart: () => void
+  writingEvaluation?: WritingEvaluation
 }
 
 export function ReviewPage({
@@ -28,8 +30,34 @@ export function ReviewPage({
   percentage,
   isPass,
   onBack,
-  onRestart
+  onRestart,
+  writingEvaluation
 }: ReviewPageProps) {
+
+  // If this is a writing module with evaluation data, use the specialized component
+  if (writingEvaluation) {
+    return (
+      <WritingEvaluationPage
+        level={level}
+        module={module}
+        writingEvaluation={writingEvaluation}
+        onBack={onBack}
+        onRestart={onRestart}
+      />
+    )
+  }
+
+  // Early return if questions or answers are not provided for regular review
+  if (!questions || !answers) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold mb-4">No Review Data Available</h2>
+          <Button onClick={onBack}>Back to Results</Button>
+        </div>
+      </div>
+    )
+  }
 
   const getAnswerDisplay = (question: Question, participantAnswer: any) => {
     if (question.type === "multiple-choice") {
@@ -99,98 +127,97 @@ export function ReviewPage({
 
           <div className="space-y-6">
             {questions.map((question, index) => {
-              const participantAnswer = answers[index]
-              const correct = isCorrect(question, participantAnswer)
+                  const participantAnswer = answers[index]
+                  const correct = isCorrect(question, participantAnswer)
 
-              return (
-                <Card key={question.id} className="p-6">
-                  <div className="flex items-start gap-4">
-                    <div className="flex-shrink-0">
-                      <div className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold ${
-                        correct
-                          ? "bg-green-500 text-white"
-                          : "bg-red-500 text-white"
-                      }`}>
-                        {index + 1}
-                      </div>
-                    </div>
-
-                    <div className="flex-1 space-y-4">
-                      {/* Question Context */}
-                      {question.context && (
-                        <div className="rounded-lg bg-muted p-4">
-                          <p className="whitespace-pre-line leading-relaxed text-card-foreground">
-                            {question.context}
-                          </p>
+                  return (
+                    <Card key={question.id} className="p-6">
+                      <div className="flex items-start gap-4">
+                        <div className="flex-shrink-0">
+                          <div className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold ${
+                            correct
+                              ? "bg-green-500 text-white"
+                              : "bg-red-500 text-white"
+                          }`}>
+                            {index + 1}
+                          </div>
                         </div>
-                      )}
 
-                      {/* Question */}
-                      <div>
-                        <h3 className="text-lg font-semibold text-card-foreground mb-2">
-                          {question.question}
-                        </h3>
-                      </div>
-
-                      {/* Answer Comparison */}
-                      <div className="grid gap-4 md:grid-cols-2">
-                        {/* Your Answer */}
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium">Your Answer:</span>
-                            {correct ? (
-                              <CheckCircle2 className="h-4 w-4 text-green-500" />
-                            ) : (
-                              <XCircle className="h-4 w-4 text-red-500" />
+                        <div className="flex-1 space-y-4">
+                          {/* Question */}
+                          <div>
+                            <h3 className="text-lg font-semibold mb-2">{question.question}</h3>
+                            {question.context && (
+                              <div className="rounded-lg bg-muted p-3 mb-3">
+                                <p className="text-sm whitespace-pre-line">{question.context}</p>
+                              </div>
                             )}
                           </div>
-                          <div className={`rounded-lg border-2 p-3 ${
-                            correct
-                              ? "border-green-200 bg-green-50"
-                              : "border-red-200 bg-red-50"
-                          }`}>
-                            <p className="text-sm">
-                              {getAnswerDisplay(question, participantAnswer)}
-                            </p>
-                          </div>
-                        </div>
 
-                        {/* Correct Answer */}
-                        <div className="space-y-2">
-                          <span className="text-sm font-medium">Correct Answer:</span>
-                          <div className="rounded-lg border-2 border-green-200 bg-green-50 p-3">
-                            <p className="text-sm">
-                              {getCorrectAnswerDisplay(question)}
-                            </p>
+                          {/* Answer Comparison */}
+                          <div className="grid gap-4 md:grid-cols-2">
+                            {/* Your Answer */}
+                            <div className="space-y-2">
+                              <span className="text-sm font-medium flex items-center gap-2">
+                                {correct ? (
+                                  <CheckCircle2 className="h-4 w-4 text-green-600" />
+                                ) : (
+                                  <XCircle className="h-4 w-4 text-red-600" />
+                                )}
+                                Your Answer:
+                              </span>
+                              <div className={`rounded-lg border-2 p-3 ${
+                                correct
+                                  ? "border-green-200 bg-green-50"
+                                  : "border-red-200 bg-red-50"
+                              }`}>
+                                <p className="text-sm">
+                                  {getAnswerDisplay(question, participantAnswer)}
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Correct Answer */}
+                            <div className="space-y-2">
+                              <span className="text-sm font-medium">Correct Answer:</span>
+                              <div className="rounded-lg border-2 border-green-200 bg-green-50 p-3">
+                                <p className="text-sm">
+                                  {getCorrectAnswerDisplay(question)}
+                                </p>
+                              </div>
+                            </div>
                           </div>
+
+                          {/* Multiple Choice Options (if applicable) */}
+                          {question.type === "multiple-choice" && question.options && (
+                            <div className="space-y-2">
+                              <span className="text-sm font-medium">Available Options:</span>
+                              <div className="grid gap-1">
+                                {question.options.map((option, optionIndex) => (
+                                  <div
+                                    key={optionIndex}
+                                    className={`rounded p-2 text-sm ${
+                                      optionIndex === question.correctAnswer
+                                        ? "bg-green-100 text-green-800"
+                                        : optionIndex === participantAnswer
+                                        ? "bg-red-100 text-red-800"
+                                        : "bg-gray-50 text-gray-600"
+                                    }`}
+                                  >
+                                    {String.fromCharCode(65 + optionIndex)}. {option}
+                                    {optionIndex === question.correctAnswer && " ✓"}
+                                    {optionIndex === participantAnswer && optionIndex !== question.correctAnswer && " ✗"}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
-
-                      {/* Multiple Choice Options (if applicable) */}
-                      {question.type === "multiple-choice" && question.options && (
-                        <div className="space-y-2">
-                          <span className="text-sm font-medium">Available Options:</span>
-                          <div className="grid gap-2">
-                            {question.options.map((option, optionIndex) => (
-                              <div key={optionIndex} className={`rounded-lg border p-2 text-sm ${
-                                optionIndex === question.correctAnswer
-                                  ? "border-green-300 bg-green-50"
-                                  : optionIndex === participantAnswer
-                                  ? "border-red-300 bg-red-50"
-                                  : "border-gray-200 bg-gray-50"
-                              }`}>
-                                {String.fromCharCode(65 + optionIndex)}. {option}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </Card>
-              )
-            })}
-          </div>
+                    </Card>
+                  )
+                })}
+              </div>
 
           {/* Action Buttons */}
           <div className="mt-8 flex flex-col sm:flex-row gap-4 justify-center">

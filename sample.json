@@ -1,0 +1,36 @@
+{
+  "level": "A1",
+  "modul": "Schreiben",
+  "title": "Goethe-Zertifikat A1 - Schreiben",
+  "teile": [
+    {
+      "teilNummer": 1,
+      "anweisung": "Füllen Sie das Formular aus. Schreiben Sie zu jeder Information ein oder zwei Wörter.",
+      "aufgabentyp": "Formular ausfüllen",
+      "kontext": "Sie möchten an einem Sprachkurs teilnehmen und füllen das Anmeldeformular aus.",
+      "leitpunkte": [
+        "Nachname",
+        "Vorname",
+        "Adresse",
+        "Geburtsdatum",
+        "Geburtsort",
+        "Sprache"
+      ],
+      "wortzahl": "1-2 Wörter pro Feld",
+      "musterloesung": "Nachname: Schmidt\nVorname: Anna\nAdresse: Hauptstraße 15\nGeburtsdatum: 10.03.1995\nGeburtsort: München\nSprache: Deutsch"
+    },
+    {
+      "teilNummer": 2,
+      "anweisung": "Schreiben Sie eine kurze Nachricht an Ihren Freund/Ihre Freundin. Laden Sie ihn/sie zu Ihrem Geburtstag ein. Schreiben Sie ca. 30 Wörter.",
+      "aufgabentyp": "Kurze Nachricht",
+      "kontext": "Ihr Geburtstag ist nächste Woche. Sie möchten Ihren Freund oder Ihre Freundin einladen.",
+      "leitpunkte": [
+        "Wann ist Ihr Geburtstag?",
+        "Wo ist die Feier?",
+        "Was machen Sie?"
+      ],
+      "wortzahl": "ca. 30 Wörter",
+      "musterloesung": "Hallo Lisa, mein Geburtstag ist am 10. Juni. Ich mache eine kleine Feier bei mir zu Hause um 18 Uhr. Wir essen Kuchen und spielen Spiele. Kommst du? Liebe Grüße, Anna"
+    }
+  ]
+}
