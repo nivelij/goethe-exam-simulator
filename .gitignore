@@ -16,8 +16,13 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files
+# env files (NEVER COMMIT SECRETS)
 .env*
+backend/.env
+backend/.env.local
+
+# AWS deployment files with secrets
+backend/lambda-deployment.zip
 
 # vercel
 .vercel
@@ -25,6 +30,3 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-
-# backend
-backend/*

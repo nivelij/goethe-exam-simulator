@@ -1,0 +1,97 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Simplified ECS Fargate infrastructure with Lambda SQS trigger for Goethe Exam Worker'
+
+Parameters:
+  OpenAIApiKey:
+    Type: String
+    Description: OpenAI API Key
+    NoEcho: true
+  DatabaseUrl:
+    Type: String
+    Description: CockroachDB connection string
+    NoEcho: true
+  ImageTag:
+    Type: String
+    Description: Docker image tag to deploy
+    Default: latest
+
+Resources:
+  # ECR Repository for storing Docker images
+  ExamWorkerRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: goethe-exam-worker
+      ImageScanningConfiguration:
+        ScanOnPush: true
+
+  # ECS Cluster
+  ExamWorkerCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: goethe-exam-cluster
+      CapacityProviders:
+        - FARGATE
+
+  # CloudWatch Log Group
+  ExamWorkerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/goethe-exam-worker
+      RetentionInDays: 3
+
+  # ECS Task Execution Role
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  # ECS Task Definition
+  ExamWorkerTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: goethe-exam-worker
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      Cpu: 1024
+      Memory: 2048
+      RuntimePlatform:
+        CpuArchitecture: X86_64
+      ContainerDefinitions:
+        - Name: exam-worker
+          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ExamWorkerRepository}:${ImageTag}'
+          Essential: true
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref ExamWorkerLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+          Environment:
+            - Name: OPENAI_API_KEY
+              Value: !Ref OpenAIApiKey
+            - Name: DATABASE_URL
+              Value: !Ref DatabaseUrl
+
+
+Outputs:
+  ECRRepositoryURI:
+    Description: ECR Repository URI
+    Value: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ExamWorkerRepository}'
+
+  ECSClusterName:
+    Description: ECS Cluster Name
+    Value: !Ref ExamWorkerCluster
+
+  TaskDefinitionArn:
+    Description: Task Definition ARN
+    Value: !Ref ExamWorkerTaskDefinition
