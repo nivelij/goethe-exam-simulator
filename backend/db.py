@@ -84,3 +84,37 @@ def get_job_result(gen_id):
     except Exception as e:
         logger.error(f"Failed to get job result: {e}")
         raise
+
+def update_participant_results(gen_id, participant_answers, score, is_pass):
+    """
+    Update participant results in the read_exam table
+
+    Args:
+        gen_id (str): The generation ID (queue_id)
+        participant_answers (list): Array of participant answers
+        score (int/float): The participant's score
+        is_pass (bool): Whether the participant passed
+    """
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                # Convert participant_answers to JSON string if it's not already
+                answers_json = json.dumps(participant_answers) if isinstance(participant_answers, (list, dict)) else participant_answers
+
+                cur.execute("""
+                    UPDATE read_exam
+                    SET participant_answers = %s, score = %s, is_pass = %s, updated_at = NOW()
+                    WHERE gen_id = %s
+                """, (answers_json, score, is_pass, gen_id))
+
+                if cur.rowcount == 0:
+                    logger.warning(f"No record found to update for gen_id: {gen_id}")
+                    return False
+
+                conn.commit()
+                logger.info(f"Successfully updated participant results for gen_id={gen_id}, score={score}, is_pass={is_pass}")
+                return True
+
+    except Exception as e:
+        logger.error(f"Failed to update participant results: {e}")
+        raise

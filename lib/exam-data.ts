@@ -133,22 +133,27 @@ export const examConfigs: Record<CEFRLevel, ExamConfig> = {
   }
 }
 
-export async function getExamQuestions(level: CEFRLevel, module: ExamModule): Promise<Question[]> {
+export interface ExamData {
+  questions: Question[]
+  queueId?: string
+}
+
+export async function getExamQuestions(level: CEFRLevel, module: ExamModule): Promise<ExamData> {
   if (module === "Lesen") {
     return await getLesenQuestions(level)
   } else if (module === "Hören") {
-    return getHörenQuestions(level)
+    return { questions: getHörenQuestions(level) }
   } else if (module === "Schreiben") {
-    return getSchreibenQuestions(level)
+    return { questions: getSchreibenQuestions(level) }
   } else {
-    return getSprechenQuestions(level)
+    return { questions: getSprechenQuestions(level) }
   }
 }
 
 // Cache to prevent duplicate requests
-const requestCache = new Map<string, Promise<ReadingExamData>>()
+const requestCache = new Map<string, Promise<{ data: ReadingExamData; queueId: string }>>()
 
-async function fetchReadingExamFromAPI(level: CEFRLevel): Promise<ReadingExamData> {
+async function fetchReadingExamFromAPI(level: CEFRLevel): Promise<{ data: ReadingExamData; queueId: string }> {
   const cacheKey = `reading-${level}`
 
   // Return existing promise if request is already in progress
@@ -157,7 +162,7 @@ async function fetchReadingExamFromAPI(level: CEFRLevel): Promise<ReadingExamDat
   }
 
   // Create new request promise
-  const requestPromise = async (): Promise<ReadingExamData> => {
+  const requestPromise = async (): Promise<{ data: ReadingExamData; queueId: string }> => {
     try {
       console.log(`Initiating new exam generation for level ${level}`)
 
@@ -206,7 +211,7 @@ async function fetchReadingExamFromAPI(level: CEFRLevel): Promise<ReadingExamDat
 
           if (getData.payload) {
             console.log(`Exam generation completed after ${attempts + 1} polling attempts`)
-            return getData.payload
+            return { data: getData.payload, queueId }
           } else {
             console.log(`Polling attempt ${attempts + 1}/${maxAttempts}: No payload yet, waiting 5 seconds...`)
           }
@@ -272,11 +277,14 @@ export function convertReadingDataToQuestions(readingData: ReadingExamData): Que
   return questions
 }
 
-async function getLesenQuestions(level: CEFRLevel): Promise<Question[]> {
+async function getLesenQuestions(level: CEFRLevel): Promise<ExamData> {
   try {
     // Fetch exam data from API
-    const readingData = await fetchReadingExamFromAPI(level)
-    return convertReadingDataToQuestions(readingData)
+    const { data: readingData, queueId } = await fetchReadingExamFromAPI(level)
+    return {
+      questions: convertReadingDataToQuestions(readingData),
+      queueId
+    }
   } catch (error) {
     console.error('Failed to fetch reading exam from API:', error)
 
@@ -442,7 +450,7 @@ async function getLesenQuestions(level: CEFRLevel): Promise<Question[]> {
         ]
       }
 
-      return convertReadingDataToQuestions(sampleA1Data)
+      return { questions: convertReadingDataToQuestions(sampleA1Data) }
     }
 
     // Fallback to original logic for other levels
@@ -501,7 +509,7 @@ async function getLesenQuestions(level: CEFRLevel): Promise<Question[]> {
     })
   }
 
-    return [...baseQuestions, ...additionalQuestions].slice(0, numberOfQuestions)
+    return { questions: [...baseQuestions, ...additionalQuestions].slice(0, numberOfQuestions) }
   }
 }
 

@@ -6,7 +6,7 @@ import { Card } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { ArrowLeft, Clock, CheckCircle2, AlertTriangle, Play, Loader2 } from "lucide-react"
 import type { CEFRLevel, ExamModule } from "@/app/page"
-import { getExamQuestions, examConfigs, type Question } from "@/lib/exam-data"
+import { getExamQuestions, examConfigs, type Question, type ExamData } from "@/lib/exam-data"
 import { LesenQuestion } from "@/components/questions/lesen-question"
 import { HörenQuestion } from "@/components/questions/horen-question"
 import { SchreibenQuestion } from "@/components/questions/schreiben-question"
@@ -15,14 +15,24 @@ import { SprechenQuestion } from "@/components/questions/sprechen-question"
 interface ExamInterfaceProps {
   level: CEFRLevel
   module: ExamModule
-  onComplete: (score: number, total: number) => void
+  onComplete: (score: number, total: number, reviewData: ExamReviewData) => void
   onBack: () => void
+}
+
+interface ExamReviewData {
+  questions: Question[]
+  answers: Record<number, any>
+  score: number
+  percentage: number
+  isPass: boolean
+  queueId?: string
 }
 
 export function ExamInterface({ level, module, onComplete, onBack }: ExamInterfaceProps) {
   const [questions, setQuestions] = useState<Question[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [loadingError, setLoadingError] = useState<string | null>(null)
+  const [queueId, setQueueId] = useState<string | null>(null)
   const examConfig = examConfigs[level]
   const moduleConfig = examConfig.modules[module]
 
@@ -40,11 +50,12 @@ export function ExamInterface({ level, module, onComplete, onBack }: ExamInterfa
       try {
         setIsLoading(true)
         setLoadingError(null)
-        const examQuestions = await getExamQuestions(level, module)
+        const examData = await getExamQuestions(level, module)
 
         // Don't update state if component was unmounted
         if (!isCancelled) {
-          setQuestions(examQuestions)
+          setQuestions(examData.questions)
+          setQueueId(examData.queueId || null)
         }
       } catch (error) {
         console.error('Failed to load questions:', error)
@@ -115,7 +126,7 @@ export function ExamInterface({ level, module, onComplete, onBack }: ExamInterfa
     setExamStarted(true)
   }
 
-  const handleFinishExam = () => {
+  const handleFinishExam = async () => {
     let score = 0
     questions.forEach((q, index) => {
       if (q.type === "multiple-choice" && answers[index] === q.correctAnswer) {
@@ -127,7 +138,50 @@ export function ExamInterface({ level, module, onComplete, onBack }: ExamInterfa
     })
 
     const percentage = Math.round((score / questions.length) * 100)
-    onComplete(percentage, moduleConfig.maxPoints)
+    const isPass = percentage >= examConfig.passScore
+
+    // Prepare participant answers array
+    const participantAnswers = questions.map((_, index) => answers[index] ?? null)
+
+    // Create review data
+    const reviewData: ExamReviewData = {
+      questions,
+      answers,
+      score,
+      percentage,
+      isPass,
+      queueId: queueId || undefined
+    }
+
+    // Call PATCH API to store results if we have a queueId (for Lesen module)
+    if (queueId && module === "Lesen") {
+      try {
+        console.log('Submitting exam results to API...')
+        const response = await fetch(`https://usncnfhlvb.execute-api.eu-central-1.amazonaws.com/live/read?queue_id=${queueId}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            participant_answers: participantAnswers,
+            score: percentage,
+            is_pass: isPass
+          })
+        })
+
+        if (!response.ok) {
+          console.error('Failed to submit exam results:', response.statusText)
+          // Continue with local flow even if API call fails
+        } else {
+          console.log('Exam results submitted successfully')
+        }
+      } catch (error) {
+        console.error('Error submitting exam results:', error)
+        // Continue with local flow even if API call fails
+      }
+    }
+
+    onComplete(percentage, moduleConfig.maxPoints, reviewData)
   }
 
   const currentQuestion = questions[currentQuestionIndex]

@@ -261,7 +261,102 @@ def lambda_handler(event, context):
             except Exception as e:
                 logger.error(f"Full traceback: {traceback.format_exc()}")
                 return build_response(500, {'error': f'Failed to enqueue payload: {str(e)}'})
-    
+
+        # Handle PATCH /read endpoint (update participant results)
+        if http_method == 'PATCH' and path == '/read':
+            logger.info("Handling PATCH /read endpoint - update participant results")
+            query_params = event.get('queryStringParameters') or {}
+            queue_id = query_params.get('queue_id')
+            logger.info(f"Query parameters: {query_params}")
+
+            if not queue_id:
+                logger.warning("Missing required parameter: queue_id")
+                return build_response(400, {
+                    'error': 'Missing required parameter: queue_id'
+                })
+
+            try:
+                # Parse request body
+                body = event.get('body')
+                if not body:
+                    logger.warning("Missing request body")
+                    return build_response(400, {
+                        'error': 'Missing request body'
+                    })
+
+                # Handle both string and dict body
+                if isinstance(body, str):
+                    request_data = json.loads(body)
+                else:
+                    request_data = body
+
+                logger.info(f"Request data: {request_data}")
+
+                # Extract required fields
+                participant_answers = request_data.get('participant_answers')
+                score = request_data.get('score')
+                is_pass = request_data.get('is_pass')
+
+                # Validate required fields
+                if participant_answers is None:
+                    return build_response(400, {
+                        'error': 'Missing required field: participant_answers'
+                    })
+
+                if score is None:
+                    return build_response(400, {
+                        'error': 'Missing required field: score'
+                    })
+
+                if is_pass is None:
+                    return build_response(400, {
+                        'error': 'Missing required field: is_pass'
+                    })
+
+                # Validate data types
+                if not isinstance(participant_answers, list):
+                    return build_response(400, {
+                        'error': 'participant_answers must be an array'
+                    })
+
+                if not isinstance(score, (int, float)):
+                    return build_response(400, {
+                        'error': 'score must be a number'
+                    })
+
+                if not isinstance(is_pass, bool):
+                    return build_response(400, {
+                        'error': 'is_pass must be a boolean'
+                    })
+
+                # Update participant results in database
+                from db import update_participant_results
+                success = update_participant_results(queue_id, participant_answers, score, is_pass)
+
+                if not success:
+                    return build_response(404, {
+                        'error': 'Queue ID not found or already updated'
+                    })
+
+                return build_response(200, {
+                    'message': 'Participant results updated successfully',
+                    'queue_id': queue_id,
+                    'score': score,
+                    'is_pass': is_pass
+                })
+
+            except json.JSONDecodeError:
+                logger.error("Invalid JSON in request body")
+                return build_response(400, {
+                    'error': 'Invalid JSON in request body'
+                })
+            except Exception as e:
+                logger.error(f"Error updating participant results: {str(e)}")
+                logger.error(f"Full traceback: {traceback.format_exc()}")
+                return build_response(500, {
+                    'error': 'Failed to update participant results'
+                })
+
         return build_response(404, {
             'error': f'Endpoint not found: {http_method} {path}'
         })

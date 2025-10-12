@@ -74,44 +74,46 @@ export function ModuleSelection({ level, onModuleSelect, onBack }: ModuleSelecti
               return (
                 <Card
                   key={module}
-                  className="group cursor-pointer border-2 transition-all hover:border-primary hover:shadow-lg bg-card"
+                  className="group cursor-pointer border-2 transition-all hover:border-primary hover:shadow-lg bg-card flex flex-col h-full"
                   onClick={() => onModuleSelect(module)}
                 >
-                  <div className="p-6">
-                    <div className="mb-4 flex items-center justify-between">
-                      <div className="flex h-14 w-14 items-center justify-center rounded-lg bg-accent/10">
-                        <Icon className="h-7 w-7 text-accent" />
+                  <div className="p-6 flex flex-col flex-grow">
+                    <div className="flex-grow">
+                      <div className="mb-4 flex items-center justify-between">
+                        <div className="flex h-14 w-14 items-center justify-center rounded-lg bg-accent/10">
+                          <Icon className="h-7 w-7 text-accent" />
+                        </div>
+                        <div className="text-right">
+                          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            {examConfigs[level].passScore}% to pass
+                          </div>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                          {examConfigs[level].passScore}% to pass
+
+                      <h3 className="mb-2 text-2xl font-bold text-card-foreground">{module}</h3>
+                      <p className="mb-4 text-sm text-muted-foreground">{info.description}</p>
+                      <p className="mb-6 text-xs text-muted-foreground">{info.details}</p>
+
+                      <div className="mb-6 grid grid-cols-3 gap-4 text-center">
+                        <div className="rounded-lg bg-muted p-3">
+                          <Clock className="mx-auto mb-1 h-4 w-4 text-muted-foreground" />
+                          <div className="text-xs text-muted-foreground">Time</div>
+                          <div className="text-sm font-semibold">{moduleConfig.duration} min</div>
+                        </div>
+                        <div className="rounded-lg bg-muted p-3">
+                          <FileText className="mx-auto mb-1 h-4 w-4 text-muted-foreground" />
+                          <div className="text-xs text-muted-foreground">Tasks</div>
+                          <div className="text-sm font-semibold">{moduleConfig.tasks}</div>
+                        </div>
+                        <div className="rounded-lg bg-muted p-3">
+                          <div className="mx-auto mb-1 text-sm font-bold text-muted-foreground">★</div>
+                          <div className="text-xs text-muted-foreground">Points</div>
+                          <div className="text-sm font-semibold">{moduleConfig.maxPoints}</div>
                         </div>
                       </div>
                     </div>
 
-                    <h3 className="mb-2 text-2xl font-bold text-card-foreground">{module}</h3>
-                    <p className="mb-4 text-sm text-muted-foreground">{info.description}</p>
-                    <p className="mb-6 text-xs text-muted-foreground">{info.details}</p>
-
-                    <div className="mb-6 grid grid-cols-3 gap-4 text-center">
-                      <div className="rounded-lg bg-muted p-3">
-                        <Clock className="mx-auto mb-1 h-4 w-4 text-muted-foreground" />
-                        <div className="text-xs text-muted-foreground">Time</div>
-                        <div className="text-sm font-semibold">{moduleConfig.duration} min</div>
-                      </div>
-                      <div className="rounded-lg bg-muted p-3">
-                        <FileText className="mx-auto mb-1 h-4 w-4 text-muted-foreground" />
-                        <div className="text-xs text-muted-foreground">Tasks</div>
-                        <div className="text-sm font-semibold">{moduleConfig.tasks}</div>
-                      </div>
-                      <div className="rounded-lg bg-muted p-3">
-                        <div className="mx-auto mb-1 text-sm font-bold text-muted-foreground">★</div>
-                        <div className="text-xs text-muted-foreground">Points</div>
-                        <div className="text-sm font-semibold">{moduleConfig.maxPoints}</div>
-                      </div>
-                    </div>
-
-                    <Button className="w-full" variant="default">
+                    <Button className="w-full mt-auto" variant="default">
                       Start {module} Exam
                     </Button>
                   </div>

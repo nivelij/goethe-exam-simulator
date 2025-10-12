@@ -2,7 +2,7 @@
 
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Trophy, RotateCcw, ArrowLeft, CheckCircle2, XCircle, Award, Calendar, Target } from "lucide-react"
+import { Trophy, RotateCcw, ArrowLeft, CheckCircle2, XCircle, Award, Calendar, Target, Eye } from "lucide-react"
 import type { CEFRLevel, ExamModule } from "@/app/page"
 import { examConfigs } from "@/lib/exam-data"
 
@@ -13,9 +13,11 @@ interface ResultsPageProps {
   totalQuestions: number // This should be max points now
   onRestart: () => void
   onBackToModules: () => void
+  onReviewAnswers?: () => void
+  hasReviewData?: boolean
 }
 
-export function ResultsPage({ level, module, score, totalQuestions, onRestart, onBackToModules }: ResultsPageProps) {
+export function ResultsPage({ level, module, score, totalQuestions, onRestart, onBackToModules, onReviewAnswers, hasReviewData }: ResultsPageProps) {
   const examConfig = examConfigs[level]
   const moduleConfig = examConfig.modules[module]
   const percentage = Math.round(score) // score is already a percentage
@@ -115,6 +117,12 @@ export function ResultsPage({ level, module, score, totalQuestions, onRestart, o
                 <ArrowLeft className="h-4 w-4" />
                 Back to Modules
               </Button>
+              {hasReviewData && onReviewAnswers && (
+                <Button variant="outline" onClick={onReviewAnswers} className="flex-1 gap-2">
+                  <Eye className="h-4 w-4" />
+                  Review Answers
+                </Button>
+              )}
               <Button onClick={onRestart} className="flex-1 gap-2">
                 <RotateCcw className="h-4 w-4" />
                 Start New Exam
