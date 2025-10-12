@@ -138,3 +138,151 @@ def update_participant_results(queue_id, participant_answers, score, is_pass):
     except Exception as e:
         logger.error(f"Failed to update participant results: {e}")
         raise
+
+def insert_write_exam(queue_id, level):
+    """
+    Insert a new record into the write_exam table
+    """
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO write_exam(queue_id, level) VALUES (%s, %s)",
+                    (queue_id, level)
+                )
+                conn.commit()
+                logger.info(f"Successfully inserted write_exam record: queue_id={queue_id}, level={level}")
+    except Exception as e:
+        logger.error(f"Failed to insert write_exam record: {e}")
+        raise
+
+def get_write_job_result(queue_id):
+    """
+    Retrieve write job result by queue_id from write_exam table
+    Returns: dict with payload, or None if not found
+    """
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT payload FROM write_exam WHERE queue_id = %s AND payload IS NOT NULL",
+                    (queue_id,)
+                )
+                result = cur.fetchone()
+
+                if result:
+                    payload = result[0]
+
+                    # Parse JSON payload if it exists and is a string
+                    parsed_payload = None
+                    if payload:
+                        try:
+                            # Check if payload is already a dict or if it's a JSON string
+                            if isinstance(payload, str):
+                                parsed_payload = json.loads(payload)
+                            else:
+                                parsed_payload = payload  # Already parsed
+                        except json.JSONDecodeError as e:
+                            logger.error(f"Failed to parse payload JSON: {e}")
+                            parsed_payload = payload  # Return raw payload if JSON parsing fails
+
+                    return {
+                        'payload': parsed_payload
+                    }
+                else:
+                    logger.info(f"No write job found for queue_id: {queue_id}")
+                    return None
+
+    except Exception as e:
+        logger.error(f"Failed to get write job result: {e}")
+        raise
+
+def update_write_participant_answers(queue_id, participant_answers):
+    """
+    Update participant answers in the write_exam table
+
+    Args:
+        queue_id (str): The queue ID
+        participant_answers (list/dict/str): The participant's answers - can be any format
+    """
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                # Convert to JSON string if it's not already a string
+                if isinstance(participant_answers, (list, dict)):
+                    answers_json = json.dumps(participant_answers)
+                else:
+                    answers_json = participant_answers
+
+                cur.execute("""
+                    UPDATE write_exam
+                    SET participant_answers = %s
+                    WHERE queue_id = %s
+                """, (answers_json, queue_id))
+
+                if cur.rowcount == 0:
+                    logger.warning(f"No record found to update for queue_id: {queue_id}")
+                    return False
+
+                conn.commit()
+                logger.info(f"Successfully updated write participant answers for queue_id={queue_id}")
+                return True
+
+    except Exception as e:
+        logger.error(f"Failed to update write participant answers: {e}")
+        raise
+
+def get_write_exam_data(queue_id, modus):
+    """
+    Retrieve write exam data by queue_id and modus
+
+    Args:
+        queue_id (str): The queue ID
+        modus (str): Either 'generate' for payload or 'evaluate' for evaluation
+
+    Returns:
+        dict with data, or None if not found
+    """
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                if modus == 'generate':
+                    cur.execute(
+                        "SELECT payload FROM write_exam WHERE queue_id = %s AND payload IS NOT NULL",
+                        (queue_id,)
+                    )
+                elif modus == 'evaluate':
+                    cur.execute(
+                        "SELECT evaluation FROM write_exam WHERE queue_id = %s AND evaluation IS NOT NULL",
+                        (queue_id,)
+                    )
+                else:
+                    return None
+
+                result = cur.fetchone()
+
+                if result:
+                    data = result[0]
+
+                    # Parse JSON if it's a string
+                    parsed_data = None
+                    if data:
+                        try:
+                            if isinstance(data, str):
+                                parsed_data = json.loads(data)
+                            else:
+                                parsed_data = data
+                        except json.JSONDecodeError as e:
+                            logger.error(f"Failed to parse JSON data: {e}")
+                            parsed_data = data
+
+                    return {
+                        'data': parsed_data
+                    }
+                else:
+                    logger.info(f"No write exam data found for queue_id: {queue_id}, modus: {modus}")
+                    return None
+
+    except Exception as e:
+        logger.error(f"Failed to get write exam data: {e}")
+        raise
