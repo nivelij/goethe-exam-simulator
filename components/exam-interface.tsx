@@ -4,9 +4,9 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
-import { ArrowLeft, Clock, CheckCircle2, AlertTriangle, Play } from "lucide-react"
+import { ArrowLeft, Clock, CheckCircle2, AlertTriangle, Play, Loader2 } from "lucide-react"
 import type { CEFRLevel, ExamModule } from "@/app/page"
-import { getExamQuestions, examConfigs } from "@/lib/exam-data"
+import { getExamQuestions, examConfigs, type Question } from "@/lib/exam-data"
 import { LesenQuestion } from "@/components/questions/lesen-question"
 import { HörenQuestion } from "@/components/questions/horen-question"
 import { SchreibenQuestion } from "@/components/questions/schreiben-question"
@@ -20,7 +20,9 @@ interface ExamInterfaceProps {
 }
 
 export function ExamInterface({ level, module, onComplete, onBack }: ExamInterfaceProps) {
-  const questions = getExamQuestions(level, module)
+  const [questions, setQuestions] = useState<Question[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [loadingError, setLoadingError] = useState<string | null>(null)
   const examConfig = examConfigs[level]
   const moduleConfig = examConfig.modules[module]
 
@@ -29,6 +31,40 @@ export function ExamInterface({ level, module, onComplete, onBack }: ExamInterfa
   const [timeRemaining, setTimeRemaining] = useState(moduleConfig.duration * 60) // Convert minutes to seconds
   const [examStarted, setExamStarted] = useState(false)
   const [showTimeWarning, setShowTimeWarning] = useState(false)
+
+  // Load questions when component mounts
+  useEffect(() => {
+    let isCancelled = false
+
+    async function loadQuestions() {
+      try {
+        setIsLoading(true)
+        setLoadingError(null)
+        const examQuestions = await getExamQuestions(level, module)
+
+        // Don't update state if component was unmounted
+        if (!isCancelled) {
+          setQuestions(examQuestions)
+        }
+      } catch (error) {
+        console.error('Failed to load questions:', error)
+        if (!isCancelled) {
+          setLoadingError(error instanceof Error ? error.message : 'Failed to load questions')
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsLoading(false)
+        }
+      }
+    }
+
+    loadQuestions()
+
+    // Cleanup function to prevent state updates on unmounted component
+    return () => {
+      isCancelled = true
+    }
+  }, [level, module])
 
   useEffect(() => {
     if (!examStarted) return
@@ -95,9 +131,61 @@ export function ExamInterface({ level, module, onComplete, onBack }: ExamInterfa
   }
 
   const currentQuestion = questions[currentQuestionIndex]
-  const progress = ((currentQuestionIndex + 1) / questions.length) * 100
+  const progress = questions.length > 0 ? ((currentQuestionIndex + 1) / questions.length) * 100 : 0
   const isLowTime = timeRemaining <= 300 && timeRemaining > 0 // Last 5 minutes
   const isCriticalTime = timeRemaining <= 60 && timeRemaining > 0 // Last minute
+
+  // Show loading state
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Card className="max-w-md w-full mx-4 p-8">
+          <div className="text-center">
+            <div className="flex justify-center mb-6">
+              <Loader2 className="h-12 w-12 animate-spin text-primary" />
+            </div>
+            <h2 className="text-xl font-semibold mb-2">Preparing Your Exam</h2>
+            <p className="text-muted-foreground mb-4">
+              {module === "Lesen"
+                ? "Generating personalized reading questions..."
+                : "Loading exam questions..."
+              }
+            </p>
+            <div className="text-sm text-muted-foreground">
+              This may take a few moments, please wait.
+            </div>
+          </div>
+        </Card>
+      </div>
+    )
+  }
+
+  // Show error state
+  if (loadingError) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Card className="max-w-md w-full mx-4 p-8">
+          <div className="text-center">
+            <div className="flex justify-center mb-6">
+              <AlertTriangle className="h-12 w-12 text-destructive" />
+            </div>
+            <h2 className="text-xl font-semibold mb-2">Failed to Load Exam</h2>
+            <p className="text-muted-foreground mb-4">
+              {loadingError}
+            </p>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={onBack} className="flex-1">
+                Go Back
+              </Button>
+              <Button onClick={() => window.location.reload()} className="flex-1">
+                Try Again
+              </Button>
+            </div>
+          </div>
+        </Card>
+      </div>
+    )
+  }
 
   // Show start screen if exam hasn't started
   if (!examStarted) {
@@ -236,33 +324,37 @@ export function ExamInterface({ level, module, onComplete, onBack }: ExamInterfa
           )}
 
           <Card className="p-8">
-            {module === "Lesen" && (
-              <LesenQuestion
-                question={currentQuestion}
-                answer={answers[currentQuestionIndex]}
-                onAnswer={handleAnswer}
-              />
-            )}
-            {module === "Hören" && (
-              <HörenQuestion
-                question={currentQuestion}
-                answer={answers[currentQuestionIndex]}
-                onAnswer={handleAnswer}
-              />
-            )}
-            {module === "Schreiben" && (
-              <SchreibenQuestion
-                question={currentQuestion}
-                answer={answers[currentQuestionIndex]}
-                onAnswer={handleAnswer}
-              />
-            )}
-            {module === "Sprechen" && (
-              <SprechenQuestion
-                question={currentQuestion}
-                answer={answers[currentQuestionIndex]}
-                onAnswer={handleAnswer}
-              />
+            {currentQuestion && (
+              <>
+                {module === "Lesen" && (
+                  <LesenQuestion
+                    question={currentQuestion}
+                    answer={answers[currentQuestionIndex]}
+                    onAnswer={handleAnswer}
+                  />
+                )}
+                {module === "Hören" && (
+                  <HörenQuestion
+                    question={currentQuestion}
+                    answer={answers[currentQuestionIndex]}
+                    onAnswer={handleAnswer}
+                  />
+                )}
+                {module === "Schreiben" && (
+                  <SchreibenQuestion
+                    question={currentQuestion}
+                    answer={answers[currentQuestionIndex]}
+                    onAnswer={handleAnswer}
+                  />
+                )}
+                {module === "Sprechen" && (
+                  <SprechenQuestion
+                    question={currentQuestion}
+                    answer={answers[currentQuestionIndex]}
+                    onAnswer={handleAnswer}
+                  />
+                )}
+              </>
             )}
           </Card>
 

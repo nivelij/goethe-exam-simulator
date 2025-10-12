@@ -133,9 +133,9 @@ export const examConfigs: Record<CEFRLevel, ExamConfig> = {
   }
 }
 
-export function getExamQuestions(level: CEFRLevel, module: ExamModule): Question[] {
+export async function getExamQuestions(level: CEFRLevel, module: ExamModule): Promise<Question[]> {
   if (module === "Lesen") {
-    return getLesenQuestions(level)
+    return await getLesenQuestions(level)
   } else if (module === "Hören") {
     return getHörenQuestions(level)
   } else if (module === "Schreiben") {
@@ -143,6 +143,92 @@ export function getExamQuestions(level: CEFRLevel, module: ExamModule): Question
   } else {
     return getSprechenQuestions(level)
   }
+}
+
+// Cache to prevent duplicate requests
+const requestCache = new Map<string, Promise<ReadingExamData>>()
+
+async function fetchReadingExamFromAPI(level: CEFRLevel): Promise<ReadingExamData> {
+  const cacheKey = `reading-${level}`
+
+  // Return existing promise if request is already in progress
+  if (requestCache.has(cacheKey)) {
+    return requestCache.get(cacheKey)!
+  }
+
+  // Create new request promise
+  const requestPromise = async (): Promise<ReadingExamData> => {
+    try {
+      console.log(`Initiating new exam generation for level ${level}`)
+
+      // Step 1: Make PUT request to initiate exam generation
+      const putResponse = await fetch(`https://usncnfhlvb.execute-api.eu-central-1.amazonaws.com/live/read?level=${level}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      })
+
+      if (!putResponse.ok) {
+        throw new Error(`Failed to initiate exam generation: ${putResponse.statusText}`)
+      }
+
+      const putData = await putResponse.json()
+      const queueId = putData.queue_id
+
+      if (!queueId) {
+        throw new Error('No queue_id received from API')
+      }
+
+      console.log(`Received queue_id: ${queueId}, waiting 10 seconds...`)
+
+      // Step 2: Wait 10 seconds
+      await new Promise(resolve => setTimeout(resolve, 10000))
+
+      // Step 3: Poll for results
+      let attempts = 0
+      const maxAttempts = 60 // 5 minutes max (60 * 5 seconds)
+
+      console.log('Starting to poll for results...')
+
+      while (attempts < maxAttempts) {
+        const getResponse = await fetch(`https://usncnfhlvb.execute-api.eu-central-1.amazonaws.com/live/read?queue_id=${queueId}`)
+
+        if (getResponse.status === 404) {
+          // 404 means exam is not ready yet, continue polling
+          console.log(`Polling attempt ${attempts + 1}/${maxAttempts}: Exam not ready (404), waiting 5 seconds...`)
+        } else if (!getResponse.ok) {
+          // Other HTTP errors are actual failures
+          throw new Error(`Failed to fetch exam data: ${getResponse.status} ${getResponse.statusText}`)
+        } else {
+          // 200 response, check for payload
+          const getData = await getResponse.json()
+
+          if (getData.payload) {
+            console.log(`Exam generation completed after ${attempts + 1} polling attempts`)
+            return getData.payload
+          } else {
+            console.log(`Polling attempt ${attempts + 1}/${maxAttempts}: No payload yet, waiting 5 seconds...`)
+          }
+        }
+
+        // Wait 5 seconds before next attempt
+        await new Promise(resolve => setTimeout(resolve, 5000))
+        attempts++
+      }
+
+      throw new Error('Timeout: Exam generation took too long')
+    } finally {
+      // Remove from cache when request completes (success or failure)
+      requestCache.delete(cacheKey)
+    }
+  }
+
+  // Cache the promise
+  const promise = requestPromise()
+  requestCache.set(cacheKey, promise)
+
+  return promise
 }
 
 export function convertReadingDataToQuestions(readingData: ReadingExamData): Question[] {
@@ -186,178 +272,184 @@ export function convertReadingDataToQuestions(readingData: ReadingExamData): Que
   return questions
 }
 
-function getLesenQuestions(level: CEFRLevel): Question[] {
-  // For now, return the sample A1 data if level is A1
-  // This can be extended to fetch actual data from backend
-  if (level === "A1") {
-    const sampleA1Data: ReadingExamData = {
-      level: "A1",
-      modul: "Lesen",
-      title: "Goethe-Zertifikat A1 - Lesen",
-      teile: [
-        {
-          teilNummer: 1,
-          anweisung: "Lesen Sie die kurzen Nachrichten und entscheiden Sie, ob die Aussagen richtig oder falsch sind.",
-          texte: [
-            {
-              titel: "",
-              inhalt: "1. Hallo Anna, ich komme heute später nach Hause. Bis dann! \n2. Liebe Frau Müller, Ihr Termin am Montag um 10 Uhr ist bestätigt.\n3. Achtung! Das Schwimmbad ist heute geschlossen.\n4. Guten Morgen! Unser Geschäft hat von 9 bis 18 Uhr geöffnet."
-            }
-          ],
-          fragen: [
-            {
-              frageNummer: 1,
-              frageText: "Anna kommt heute pünktlich nach Hause.",
-              format: "Richtig/Falsch",
-              loesung: "Falsch"
-            },
-            {
-              frageNummer: 2,
-              frageText: "Der Termin bei Frau Müller ist am Montag um 10 Uhr.",
-              format: "Richtig/Falsch",
-              loesung: "Richtig"
-            },
-            {
-              frageNummer: 3,
-              frageText: "Das Schwimmbad ist heute geöffnet.",
-              format: "Richtig/Falsch",
-              loesung: "Falsch"
-            },
-            {
-              frageNummer: 4,
-              frageText: "Das Geschäft schließt um 18 Uhr.",
-              format: "Richtig/Falsch",
-              loesung: "Richtig"
-            },
-            {
-              frageNummer: 5,
-              frageText: "Der Brief beginnt mit 'Hallo Anna'.",
-              format: "Richtig/Falsch",
-              loesung: "Richtig"
-            }
-          ]
-        },
-        {
-          teilNummer: 2,
-          anweisung: "Lesen Sie die Beschreibungen von Webseiten und wählen Sie die richtige Antwort aus.",
-          texte: [
-            {
-              titel: "Webseite 1",
-              inhalt: "Willkommen bei SportAktiv! Hier finden Sie Infos zu Kursen, Trainingsplänen und Outdoor-Aktivitäten."
-            },
-            {
-              titel: "Webseite 2",
-              inhalt: "Kochenleicht.de bietet einfache Rezepte, Tipps fürs Backen und eine große Auswahl an vegetarischen Gerichten."
-            },
-            {
-              titel: "Webseite 3",
-              inhalt: "Auf ReisenWelt entdecken Sie die besten Reiseziele mit Hotelbewertungen und Reisetipps."
-            }
-          ],
-          fragen: [
-            {
-              frageNummer: 6,
-              frageText: "Welche Webseite findet man einfache Rezepte?",
-              format: "Multiple-Choice",
-              optionen: {
-                a: "SportAktiv",
-                b: "Kochenleicht.de",
-                c: "ReisenWelt",
-                d: "Keine der Webseiten"
+async function getLesenQuestions(level: CEFRLevel): Promise<Question[]> {
+  try {
+    // Fetch exam data from API
+    const readingData = await fetchReadingExamFromAPI(level)
+    return convertReadingDataToQuestions(readingData)
+  } catch (error) {
+    console.error('Failed to fetch reading exam from API:', error)
+
+    // Fallback to sample data for A1 level
+    if (level === "A1") {
+      const sampleA1Data: ReadingExamData = {
+        level: "A1",
+        modul: "Lesen",
+        title: "Goethe-Zertifikat A1 - Lesen",
+        teile: [
+          {
+            teilNummer: 1,
+            anweisung: "Lesen Sie die kurzen Nachrichten und entscheiden Sie, ob die Aussagen richtig oder falsch sind.",
+            texte: [
+              {
+                titel: "",
+                inhalt: "1. Hallo Anna, ich komme heute später nach Hause. Bis dann! \n2. Liebe Frau Müller, Ihr Termin am Montag um 10 Uhr ist bestätigt.\n3. Achtung! Das Schwimmbad ist heute geschlossen.\n4. Guten Morgen! Unser Geschäft hat von 9 bis 18 Uhr geöffnet."
+              }
+            ],
+            fragen: [
+              {
+                frageNummer: 1,
+                frageText: "Anna kommt heute pünktlich nach Hause.",
+                format: "Richtig/Falsch",
+                loesung: "Falsch"
               },
-              loesung: "b"
-            },
-            {
-              frageNummer: 7,
-              frageText: "Wo gibt es Informationen zu Outdoor-Aktivitäten?",
-              format: "Multiple-Choice",
-              optionen: {
-                a: "Kochenleicht.de",
-                b: "ReisenWelt",
-                c: "SportAktiv",
-                d: "Keine der Webseiten"
+              {
+                frageNummer: 2,
+                frageText: "Der Termin bei Frau Müller ist am Montag um 10 Uhr.",
+                format: "Richtig/Falsch",
+                loesung: "Richtig"
               },
-              loesung: "c"
-            },
-            {
-              frageNummer: 8,
-              frageText: "Welche Webseite ist für Reiseinformationen?",
-              format: "Multiple-Choice",
-              optionen: {
-                a: "ReisenWelt",
-                b: "SportAktiv",
-                c: "Kochenleicht.de",
-                d: "Keine der Webseiten"
+              {
+                frageNummer: 3,
+                frageText: "Das Schwimmbad ist heute geöffnet.",
+                format: "Richtig/Falsch",
+                loesung: "Falsch"
               },
-              loesung: "a"
-            },
-            {
-              frageNummer: 9,
-              frageText: "Auf Kochenleicht.de findet man Trainingspläne.",
-              format: "Richtig/Falsch",
-              loesung: "Falsch"
-            },
-            {
-              frageNummer: 10,
-              frageText: "SportAktiv bietet Kurse an.",
-              format: "Richtig/Falsch",
-              loesung: "Richtig"
-            }
-          ]
-        },
-        {
-          teilNummer: 3,
-          anweisung: "Lesen Sie die Schilder und entscheiden Sie, ob die Aussagen richtig oder falsch sind.",
-          texte: [
-            {
-              titel: "",
-              inhalt: "1. \"Bitte keine Hunde im Park!\"\n2. \"Fahrradweg – nur für Fahrräder.\"\n3. \"Reserviert – Parkplätze für Gäste.\"\n4. \"Notausgang – bitte freihalten!\""
-            }
-          ],
-          fragen: [
-            {
-              frageNummer: 11,
-              frageText: "Hunde dürfen im Park frei herumlaufen.",
-              format: "Richtig/Falsch",
-              loesung: "Falsch"
-            },
-            {
-              frageNummer: 12,
-              frageText: "Der Fahrradweg ist für Fußgänger.",
-              format: "Richtig/Falsch",
-              loesung: "Falsch"
-            },
-            {
-              frageNummer: 13,
-              frageText: "Die Parkplätze sind für Gäste reserviert.",
-              format: "Richtig/Falsch",
-              loesung: "Richtig"
-            },
-            {
-              frageNummer: 14,
-              frageText: "Der Notausgang soll blockiert werden.",
-              format: "Richtig/Falsch",
-              loesung: "Falsch"
-            },
-            {
-              frageNummer: 15,
-              frageText: "Im Park sind Hunde verboten.",
-              format: "Richtig/Falsch",
-              loesung: "Richtig"
-            }
-          ]
-        }
-      ]
+              {
+                frageNummer: 4,
+                frageText: "Das Geschäft schließt um 18 Uhr.",
+                format: "Richtig/Falsch",
+                loesung: "Richtig"
+              },
+              {
+                frageNummer: 5,
+                frageText: "Der Brief beginnt mit 'Hallo Anna'.",
+                format: "Richtig/Falsch",
+                loesung: "Richtig"
+              }
+            ]
+          },
+          {
+            teilNummer: 2,
+            anweisung: "Lesen Sie die Beschreibungen von Webseiten und wählen Sie die richtige Antwort aus.",
+            texte: [
+              {
+                titel: "Webseite 1",
+                inhalt: "Willkommen bei SportAktiv! Hier finden Sie Infos zu Kursen, Trainingsplänen und Outdoor-Aktivitäten."
+              },
+              {
+                titel: "Webseite 2",
+                inhalt: "Kochenleicht.de bietet einfache Rezepte, Tipps fürs Backen und eine große Auswahl an vegetarischen Gerichten."
+              },
+              {
+                titel: "Webseite 3",
+                inhalt: "Auf ReisenWelt entdecken Sie die besten Reiseziele mit Hotelbewertungen und Reisetipps."
+              }
+            ],
+            fragen: [
+              {
+                frageNummer: 6,
+                frageText: "Welche Webseite findet man einfache Rezepte?",
+                format: "Multiple-Choice",
+                optionen: {
+                  a: "SportAktiv",
+                  b: "Kochenleicht.de",
+                  c: "ReisenWelt",
+                  d: "Keine der Webseiten"
+                },
+                loesung: "b"
+              },
+              {
+                frageNummer: 7,
+                frageText: "Wo gibt es Informationen zu Outdoor-Aktivitäten?",
+                format: "Multiple-Choice",
+                optionen: {
+                  a: "Kochenleicht.de",
+                  b: "ReisenWelt",
+                  c: "SportAktiv",
+                  d: "Keine der Webseiten"
+                },
+                loesung: "c"
+              },
+              {
+                frageNummer: 8,
+                frageText: "Welche Webseite ist für Reiseinformationen?",
+                format: "Multiple-Choice",
+                optionen: {
+                  a: "ReisenWelt",
+                  b: "SportAktiv",
+                  c: "Kochenleicht.de",
+                  d: "Keine der Webseiten"
+                },
+                loesung: "a"
+              },
+              {
+                frageNummer: 9,
+                frageText: "Auf Kochenleicht.de findet man Trainingspläne.",
+                format: "Richtig/Falsch",
+                loesung: "Falsch"
+              },
+              {
+                frageNummer: 10,
+                frageText: "SportAktiv bietet Kurse an.",
+                format: "Richtig/Falsch",
+                loesung: "Richtig"
+              }
+            ]
+          },
+          {
+            teilNummer: 3,
+            anweisung: "Lesen Sie die Schilder und entscheiden Sie, ob die Aussagen richtig oder falsch sind.",
+            texte: [
+              {
+                titel: "",
+                inhalt: "1. \"Bitte keine Hunde im Park!\"\n2. \"Fahrradweg – nur für Fahrräder.\"\n3. \"Reserviert – Parkplätze für Gäste.\"\n4. \"Notausgang – bitte freihalten!\""
+              }
+            ],
+            fragen: [
+              {
+                frageNummer: 11,
+                frageText: "Hunde dürfen im Park frei herumlaufen.",
+                format: "Richtig/Falsch",
+                loesung: "Falsch"
+              },
+              {
+                frageNummer: 12,
+                frageText: "Der Fahrradweg ist für Fußgänger.",
+                format: "Richtig/Falsch",
+                loesung: "Falsch"
+              },
+              {
+                frageNummer: 13,
+                frageText: "Die Parkplätze sind für Gäste reserviert.",
+                format: "Richtig/Falsch",
+                loesung: "Richtig"
+              },
+              {
+                frageNummer: 14,
+                frageText: "Der Notausgang soll blockiert werden.",
+                format: "Richtig/Falsch",
+                loesung: "Falsch"
+              },
+              {
+                frageNummer: 15,
+                frageText: "Im Park sind Hunde verboten.",
+                format: "Richtig/Falsch",
+                loesung: "Richtig"
+              }
+            ]
+          }
+        ]
+      }
+
+      return convertReadingDataToQuestions(sampleA1Data)
     }
 
-    return convertReadingDataToQuestions(sampleA1Data)
-  }
+    // Fallback to original logic for other levels
+    const config = examConfigs[level]
+    const numberOfQuestions = Math.min(config.modules.Lesen.tasks * 5, 20) // 5 questions per task, max 20
 
-  // Fallback to original logic for other levels
-  const config = examConfigs[level]
-  const numberOfQuestions = Math.min(config.modules.Lesen.tasks * 5, 20) // 5 questions per task, max 20
-
-  const baseQuestions: Question[] = [
+    const baseQuestions: Question[] = [
     {
       id: 1,
       type: "multiple-choice",
@@ -409,7 +501,8 @@ function getLesenQuestions(level: CEFRLevel): Question[] {
     })
   }
 
-  return [...baseQuestions, ...additionalQuestions].slice(0, numberOfQuestions)
+    return [...baseQuestions, ...additionalQuestions].slice(0, numberOfQuestions)
+  }
 }
 
 function getHörenQuestions(level: CEFRLevel): Question[] {
