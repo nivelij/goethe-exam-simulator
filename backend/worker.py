@@ -188,24 +188,36 @@ def process_single_job():
         if not job:
             return False
 
-        gen_id = job['gen_id']
+        job_id = job['id']
+        queue_id = job['queue_id']
+        category = job['category']
         level = job['level']
 
-        logger.info(f"Processing job: gen_id={gen_id}, level={level}")
+        logger.info(f"Processing job: id={job_id}, queue_id={queue_id}, category={category}, level={level}")
 
         try:
-            # Generate the exam content
-            result = generate_exam_reading(level)
+            result = None
+
+            # Handle different job categories
+            if category == 'read':
+                # Generate reading exam content
+                result = generate_exam_reading(level)
+            else:
+                # Handle other categories in the future (write, listen, speak)
+                error_message = f"Unsupported category: {category}"
+                logger.error(error_message)
+                update_job_failed(queue_id, error_message)
+                return True
 
             # Update job as completed
-            update_job_completed(gen_id, result)
-            logger.info(f"Successfully completed job: gen_id={gen_id}")
+            update_job_completed(queue_id, result)
+            logger.info(f"Successfully completed job: queue_id={queue_id}, category={category}")
 
         except Exception as e:
             # Update job as failed
             error_message = f"Generation failed: {str(e)}"
-            update_job_failed(gen_id, error_message)
-            logger.error(f"Job failed: gen_id={gen_id}, error={error_message}")
+            update_job_failed(queue_id, error_message)
+            logger.error(f"Job failed: queue_id={queue_id}, error={error_message}")
 
         return True
 

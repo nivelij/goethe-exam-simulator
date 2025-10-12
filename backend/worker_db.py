@@ -30,34 +30,41 @@ def get_db_connection():
 
 def get_next_pending_job():
     """
-    Get the next pending job from read_exam table and update status to 'in_progress'
-    Returns: dict with gen_id and level, or None if no jobs available
+    Get the next pending job from exam_jobs table and update status to 'in_progress'
+    Returns: dict with id, queue_id, category, and level, or None if no jobs available
     """
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 # Use SELECT FOR UPDATE to prevent race conditions
                 cur.execute("""
-                    SELECT gen_id, level
-                    FROM read_exam
-                    WHERE gen_status = 'not_started'
+                    SELECT ej.id, ej.queue_id, ej.category, re.level
+                    FROM exam_jobs ej
+                    JOIN read_exam re ON ej.queue_id = re.gen_id
+                    WHERE ej.status = 'not_started'
                     LIMIT 1
                     FOR UPDATE
                 """)
 
                 result = cur.fetchone()
                 if result:
-                    gen_id, level = result
+                    job_id, queue_id, category, level = result
 
-                    # Update status to in_progress
+                    # Update exam_jobs status to in_progress
+                    cur.execute(
+                        "UPDATE exam_jobs SET status = 'in_progress' WHERE id = %s",
+                        (job_id,)
+                    )
+
+                    # Update read_exam gen_status to in_progress
                     cur.execute(
                         "UPDATE read_exam SET gen_status = 'in_progress' WHERE gen_id = %s",
-                        (gen_id,)
+                        (queue_id,)
                     )
                     conn.commit()
 
-                    logger.info(f"Retrieved and marked job as in_progress: gen_id={gen_id}, level={level}")
-                    return {"gen_id": gen_id, "level": level}
+                    logger.info(f"Retrieved and marked job as in_progress: id={job_id}, queue_id={queue_id}, category={category}, level={level}")
+                    return {"id": job_id, "queue_id": queue_id, "category": category, "level": level}
                 else:
                     logger.debug("No pending jobs found")
                     return None
@@ -66,38 +73,52 @@ def get_next_pending_job():
         logger.error(f"Failed to get next pending job: {e}")
         raise
 
-def update_job_completed(gen_id, payload):
+def update_job_completed(queue_id, payload):
     """
-    Update job status to 'done' and store the generated payload
+    Update exam_jobs status to 'done' and store the generated payload in read_exam
     """
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
+                # Update exam_jobs status to done
+                cur.execute(
+                    "UPDATE exam_jobs SET status = 'done' WHERE queue_id = %s",
+                    (queue_id,)
+                )
+
+                # Update read_exam with payload and status
                 cur.execute(
                     "UPDATE read_exam SET gen_status = 'done', payload = %s WHERE gen_id = %s",
-                    (json.dumps(payload), gen_id)
+                    (json.dumps(payload), queue_id)
                 )
                 conn.commit()
-                logger.info(f"Successfully updated job to completed: gen_id={gen_id}")
+                logger.info(f"Successfully updated job to completed: queue_id={queue_id}")
 
     except Exception as e:
         logger.error(f"Failed to update job to completed: {e}")
         raise
 
-def update_job_failed(gen_id, error_message):
+def update_job_failed(queue_id, error_message):
     """
-    Update job status to 'failed' and store error message
+    Update exam_jobs status to 'failed' and store error message in read_exam
     """
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
+                # Update exam_jobs status to failed
+                cur.execute(
+                    "UPDATE exam_jobs SET status = 'failed' WHERE queue_id = %s",
+                    (queue_id,)
+                )
+
+                # Update read_exam with error payload and status
                 error_payload = {"error": str(error_message)}
                 cur.execute(
                     "UPDATE read_exam SET gen_status = 'failed', payload = %s WHERE gen_id = %s",
-                    (json.dumps(error_payload), gen_id)
+                    (json.dumps(error_payload), queue_id)
                 )
                 conn.commit()
-                logger.info(f"Successfully updated job to failed: gen_id={gen_id}")
+                logger.info(f"Successfully updated job to failed: queue_id={queue_id}")
 
     except Exception as e:
         logger.error(f"Failed to update job to failed: {e}")

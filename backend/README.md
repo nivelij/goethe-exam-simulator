@@ -10,7 +10,6 @@
 2. **Fill in your secrets in `.env`:**
    - `OPENAI_API_KEY`: Your OpenAI API key
    - `DATABASE_URL`: Your CockroachDB connection string
-   - `SQS_QUEUE_URL`: Your AWS SQS queue URL
 
 3. **Deploy infrastructure:**
    ```bash

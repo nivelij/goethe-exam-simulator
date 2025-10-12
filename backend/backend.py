@@ -4,7 +4,7 @@ import logging
 import traceback
 import uuid
 import boto3
-from db import insert_read_exam
+from db import insert_read_exam, insert_exam_job
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -15,11 +15,9 @@ CORS_HEADERS = {
     "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS"
 }
 
-SQS_QUEUE_URL = os.environ["SQS_QUEUE_URL"]
 ECS_CLUSTER_NAME = "goethe-exam-cluster"
 ECS_TASK_DEFINITION = "goethe-exam-worker"
 
-sqs_client = boto3.client('sqs')
 ecs_client = boto3.client('ecs')
 ec2_client = boto3.client('ec2')
 
@@ -37,22 +35,6 @@ def build_response(status_code, body, additional_headers=None):
         'body': json.dumps(body) if body else ''
     }
 
-
-def _enqueue_payload(message):
-    """
-    Send JSON message to configured SQS queue.
-    """
-    try:
-        logger.info(f"Sending message to SQS queue: {SQS_QUEUE_URL}")
-        response = sqs_client.send_message(
-            QueueUrl=SQS_QUEUE_URL,
-            MessageBody=json.dumps(message)
-        )
-        logger.info(f"SQS send_message response: {response}")
-        return response
-    except Exception:
-        logger.error(f"Failed to send message to SQS: {traceback.format_exc()}")
-        raise
 
 
 def get_default_subnets():
@@ -81,107 +63,15 @@ def get_default_subnets():
         raise
 
 
-def handle_sqs_to_ecs(event, context):
-    """
-    Lambda handler for SQS messages to trigger ECS Fargate tasks
-    """
-    logger.info(f"SQS Lambda handler received event: {json.dumps(event, default=str)}")
-
-    results = []
-
-    # Get default subnets for ECS tasks
-    try:
-        subnets = get_default_subnets()
-    except Exception as e:
-        logger.error(f"Failed to get subnets: {e}")
-        return {
-            'statusCode': 500,
-            'body': json.dumps({'error': f'Failed to get subnets: {str(e)}'})
-        }
-
-    # Process each SQS record
-    for record in event['Records']:
-        try:
-            # Parse the SQS message
-            message_body = json.loads(record['body'])
-            logger.info(f"Processing SQS message: {message_body}")
-
-            # Extract queue_id and other details from the message
-            queue_id = message_body.get('queue_id')
-            payload = message_body.get('payload', {})
-
-            logger.info(f"Triggering ECS task for queue_id: {queue_id}")
-
-            # Run ECS Fargate task
-            response = ecs_client.run_task(
-                cluster=ECS_CLUSTER_NAME,
-                taskDefinition=ECS_TASK_DEFINITION,
-                launchType='FARGATE',
-                networkConfiguration={
-                    'awsvpcConfiguration': {
-                        'subnets': subnets,
-                        'assignPublicIp': 'ENABLED'
-                    }
-                },
-                overrides={
-                    'containerOverrides': [
-                        {
-                            'name': 'exam-worker',
-                            'environment': [
-                                {
-                                    'name': 'QUEUE_ID',
-                                    'value': str(queue_id)
-                                },
-                                {
-                                    'name': 'SQS_MESSAGE',
-                                    'value': json.dumps(message_body)
-                                }
-                            ]
-                        }
-                    ]
-                }
-            )
-
-            task_arn = response['tasks'][0]['taskArn']
-            logger.info(f"Successfully started ECS task: {task_arn}")
-
-            results.append({
-                'queue_id': queue_id,
-                'task_arn': task_arn,
-                'status': 'task_started'
-            })
-
-        except Exception as e:
-            logger.error(f"Error processing SQS message: {str(e)}")
-            logger.error(f"Full traceback: {traceback.format_exc()}")
-            results.append({
-                'error': str(e),
-                'status': 'failed'
-            })
-
-    return {
-        'statusCode': 200,
-        'body': json.dumps({
-            'message': f'Processed {len(event["Records"])} SQS messages',
-            'results': results
-        })
-    }
 
 
 def lambda_handler(event, context):
     """
-    AWS Lambda handler for API Gateway requests and SQS events
+    AWS Lambda handler for API Gateway requests
     """
     logger.info(f"Received event: {json.dumps(event, default=str)}")
 
     try:
-        # Check if this is an SQS event
-        if 'Records' in event and event['Records'] and event['Records'][0].get('eventSource') == 'aws:sqs':
-            logger.info("Processing SQS event")
-            return handle_sqs_to_ecs(event, context)
-
-        # Otherwise, process as HTTP request event
-        logger.info("Processing HTTP request event")
         # Get HTTP method and path
         http_method = event.get('httpMethod', '')
         path = event.get('path', '')
@@ -228,7 +118,7 @@ def lambda_handler(event, context):
                 })
 
         if http_method == 'PUT' and path == '/read':
-            logger.info("Handling PUT /read endpoint - enqueue payload to SQS")
+            logger.info("Handling PUT /read endpoint - create exam job and start ECS task")
             query_params = event.get('queryStringParameters') or {}
             level = query_params.get('level')
             logger.info(f"Query parameters: {query_params}")
@@ -247,20 +137,34 @@ def lambda_handler(event, context):
 
             try:
                 queue_id = str(uuid.uuid4())
-                _enqueue_payload({
-                    "queue_id": queue_id,
-                    "payload": {
-                        "category": "read",
-                        "level": level
-                    }
-                })
-
                 insert_read_exam(queue_id, level)
+                insert_exam_job(queue_id, 'read')
 
-                return build_response(200, {'queue_id': queue_id})
+                # Start ECS task directly
+                subnets = get_default_subnets()
+
+                response = ecs_client.run_task(
+                    cluster=ECS_CLUSTER_NAME,
+                    taskDefinition=ECS_TASK_DEFINITION,
+                    launchType='FARGATE',
+                    networkConfiguration={
+                        'awsvpcConfiguration': {
+                            'subnets': subnets,
+                            'assignPublicIp': 'ENABLED'
+                        }
+                    }
+                )
+
+                task_arn = response['tasks'][0]['taskArn']
+                logger.info(f"Successfully started ECS task: {task_arn}")
+
+                return build_response(200, {
+                    'queue_id': queue_id,
+                    'task_arn': task_arn
+                })
             except Exception as e:
                 logger.error(f"Full traceback: {traceback.format_exc()}")
-                return build_response(500, {'error': f'Failed to enqueue payload: {str(e)}'})
+                return build_response(500, {'error': f'Failed to create exam job: {str(e)}'})
 
         # Handle PATCH /read endpoint (update participant results)
         if http_method == 'PATCH' and path == '/read':
