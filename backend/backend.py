@@ -134,8 +134,8 @@ def handle_put_read(query_params):
     task_arn = start_fargate_task()
 
     return build_response(200, {
+        'message': 'Read generation job started',
         'queue_id': queue_id,
-        'task_arn': task_arn
     })
 
 def handle_patch_read(query_params, body):
@@ -243,11 +243,11 @@ def handle_write_generation(level):
     insert_write_exam(queue_id, level)
     insert_exam_job(queue_id, 'write_generation')
 
-    #task_arn = start_fargate_task()
+    task_arn = start_fargate_task()
 
     return build_response(200, {
+        'message': 'Write generation job started',
         'queue_id': queue_id,
-        #'task_arn': task_arn
     })
 
 def handle_write_evaluation(queue_id, body):
@@ -272,12 +272,11 @@ def handle_write_evaluation(queue_id, body):
     # Create evaluation job
     insert_exam_job(queue_id, 'write_evaluation')
 
-    #task_arn = start_fargate_task()
+    task_arn = start_fargate_task()
 
     return build_response(200, {
-        'message': 'Evaluation job started',
+        'message': 'Write evaluation job started',
         'queue_id': queue_id,
-        #'task_arn': task_arn
     })
 
 def lambda_handler(event, context):

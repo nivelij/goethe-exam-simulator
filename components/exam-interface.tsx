@@ -6,7 +6,7 @@ import { Card } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { ArrowLeft, Clock, CheckCircle2, AlertTriangle, Play, Loader2 } from "lucide-react"
 import type { CEFRLevel, ExamModule } from "@/app/page"
-import { getExamQuestions, examConfigs, getWritingEvaluationSample, type Question, type ExamData, type WritingEvaluation } from "@/lib/exam-data"
+import { getExamQuestions, examConfigs, getWritingEvaluationSample, fetchWritingEvaluationFromAPI, type Question, type ExamData, type WritingEvaluation } from "@/lib/exam-data"
 import { LesenQuestion } from "@/components/questions/lesen-question"
 import { HörenQuestion } from "@/components/questions/horen-question"
 import { SchreibenQuestion } from "@/components/questions/schreiben-question"
@@ -42,6 +42,7 @@ export function ExamInterface({ level, module, onComplete, onBack }: ExamInterfa
   const [timeRemaining, setTimeRemaining] = useState(moduleConfig.duration * 60) // Convert minutes to seconds
   const [examStarted, setExamStarted] = useState(false)
   const [showTimeWarning, setShowTimeWarning] = useState(false)
+  const [isEvaluating, setIsEvaluating] = useState(false)
 
   // Load questions when component mounts
   useEffect(() => {
@@ -135,14 +136,56 @@ export function ExamInterface({ level, module, onComplete, onBack }: ExamInterfa
 
     // Handle writing module with detailed evaluation
     if (module === "Schreiben") {
-      // Get writing evaluation from sample data (simulating backend call)
-      const evaluationResponse = getWritingEvaluationSample()
-      writingEvaluation = evaluationResponse.evaluation
+      try {
+        setIsEvaluating(true)
+        let evaluationResponse: any
 
-      // Use evaluation percentage directly (geschätztePunktzahl is already a percentage)
-      percentage = writingEvaluation.geschätztePunktzahl
-      isPass = percentage >= examConfig.passScore
-      score = Math.round((percentage / 100) * moduleConfig.maxPoints)
+        // If we have a queueId, first submit the answers, then get evaluation
+        if (queueId) {
+          console.log('Submitting writing exam answers and starting evaluation...')
+
+          // Prepare participant answers array
+          const participantAnswers = questions.map((_, index) => answers[index] ?? null)
+
+          // Submit answers first
+          const response = await fetch(`https://usncnfhlvb.execute-api.eu-central-1.amazonaws.com/live/write?queue_id=${queueId}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              participant_answers: participantAnswers
+            })
+          })
+
+          if (!response.ok) {
+            throw new Error(`Failed to submit writing exam answers: ${response.statusText}`)
+          }
+
+          console.log('Writing exam answers submitted, starting evaluation polling...')
+          evaluationResponse = await fetchWritingEvaluationFromAPI(queueId)
+        } else {
+          console.log('No queueId available, using sample evaluation')
+          evaluationResponse = getWritingEvaluationSample()
+        }
+
+        writingEvaluation = evaluationResponse.evaluation
+
+        // Use evaluation percentage directly (geschätztePunktzahl is already a percentage)
+        percentage = writingEvaluation!.geschätztePunktzahl
+        isPass = percentage >= examConfig.passScore
+        score = Math.round((percentage / 100) * moduleConfig.maxPoints)
+      } catch (error) {
+        console.error('Failed to fetch evaluation from backend, using sample:', error)
+        // Fallback to sample evaluation if API fails
+        const evaluationResponse = getWritingEvaluationSample()
+        writingEvaluation = evaluationResponse.evaluation
+        percentage = writingEvaluation!.geschätztePunktzahl
+        isPass = percentage >= examConfig.passScore
+        score = Math.round((percentage / 100) * moduleConfig.maxPoints)
+      } finally {
+        setIsEvaluating(false)
+      }
     } else {
       // Handle other modules with regular scoring
       questions.forEach((q, index) => {
@@ -172,10 +215,10 @@ export function ExamInterface({ level, module, onComplete, onBack }: ExamInterfa
       writingEvaluation
     }
 
-    // Call PATCH API to store results if we have a queueId (for Lesen module)
+    // Call API to store results if we have a queueId (for Lesen module only, Schreiben is handled above)
     if (queueId && module === "Lesen") {
       try {
-        console.log('Submitting exam results to API...')
+        console.log(`Submitting ${module} exam results to API...`)
         const response = await fetch(`https://usncnfhlvb.execute-api.eu-central-1.amazonaws.com/live/read?queue_id=${queueId}`, {
           method: 'PATCH',
           headers: {
@@ -189,13 +232,13 @@ export function ExamInterface({ level, module, onComplete, onBack }: ExamInterfa
         })
 
         if (!response.ok) {
-          console.error('Failed to submit exam results:', response.statusText)
+          console.error(`Failed to submit ${module} exam results:`, response.statusText)
           // Continue with local flow even if API call fails
         } else {
-          console.log('Exam results submitted successfully')
+          console.log(`${module} exam results submitted successfully`)
         }
       } catch (error) {
-        console.error('Error submitting exam results:', error)
+        console.error(`Error submitting ${module} exam results:`, error)
         // Continue with local flow even if API call fails
       }
     }
@@ -221,6 +264,8 @@ export function ExamInterface({ level, module, onComplete, onBack }: ExamInterfa
             <p className="text-muted-foreground mb-4">
               {module === "Lesen"
                 ? "Generating personalized reading questions..."
+                : module === "Schreiben"
+                ? "Generating personalized writing questions..."
                 : "Loading exam questions..."
               }
             </p>
@@ -454,9 +499,18 @@ export function ExamInterface({ level, module, onComplete, onBack }: ExamInterfa
               ))}
             </div>
             {currentQuestionIndex === questions.length - 1 ? (
-              <Button onClick={handleFinishExam} className="gap-2">
-                <CheckCircle2 className="h-4 w-4" />
-                Finish Exam
+              <Button onClick={handleFinishExam} disabled={isEvaluating} className="gap-2">
+                {isEvaluating ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Evaluating...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="h-4 w-4" />
+                    Finish Exam
+                  </>
+                )}
               </Button>
             ) : (
               <Button onClick={handleNext}>Next</Button>
@@ -464,6 +518,26 @@ export function ExamInterface({ level, module, onComplete, onBack }: ExamInterfa
           </div>
         </div>
       </main>
+
+      {/* Evaluation loading overlay */}
+      {isEvaluating && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center">
+          <Card className="max-w-md w-full mx-4 p-8">
+            <div className="text-center">
+              <div className="flex justify-center mb-6">
+                <Loader2 className="h-12 w-12 animate-spin text-primary" />
+              </div>
+              <h2 className="text-xl font-semibold mb-2">Evaluating Your Writing</h2>
+              <p className="text-muted-foreground mb-4">
+                Please wait while our AI evaluates your writing performance.
+              </p>
+              <div className="text-sm text-muted-foreground">
+                This process may take a few minutes. Please do not close this window.
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   )
 }

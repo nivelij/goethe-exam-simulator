@@ -20,31 +20,24 @@ export function SchreibenQuestion({ question, answer, onAnswer }: SchreibenQuest
   // Get the specific writing task data
   const writingTask = question.writingData
 
-  // Initialize answers from existing answer prop
+  // Initialize answers from existing answer prop only once
   useEffect(() => {
-    if (answer) {
-      if (writingTask?.aufgabentyp === "Formular ausfüllen") {
-        setFormData(answer.formData || {})
-      } else {
-        setMessageText(answer.messageText || "")
+    if (answer && writingTask) {
+      if (writingTask.aufgabentyp === "Formular ausfüllen" && answer.formData) {
+        setFormData(answer.formData)
+      } else if (writingTask.aufgabentyp !== "Formular ausfüllen" && answer.messageText) {
+        setMessageText(answer.messageText)
       }
     }
-  }, [answer, writingTask])
-
-  // Update parent component when answers change
-  useEffect(() => {
-    if (writingTask?.aufgabentyp === "Formular ausfüllen") {
-      onAnswer({ formData })
-    } else {
-      onAnswer({ messageText })
-    }
-  }, [formData, messageText, writingTask, onAnswer])
+  }, []) // Empty dependency array - only run once on mount
 
   const handleFormFieldChange = (field: string, value: string) => {
-    setFormData(prev => ({
-      ...prev,
+    const newFormData = {
+      ...formData,
       [field]: value
-    }))
+    }
+    setFormData(newFormData)
+    onAnswer({ formData: newFormData })
   }
 
   const countWords = (text: string) => {
@@ -197,7 +190,11 @@ export function SchreibenQuestion({ question, answer, onAnswer }: SchreibenQuest
               </div>
               <Textarea
                 value={messageText}
-                onChange={(e) => setMessageText(e.target.value)}
+                onChange={(e) => {
+                  const newValue = e.target.value
+                  setMessageText(newValue)
+                  onAnswer({ messageText: newValue })
+                }}
                 placeholder="Schreiben Sie hier Ihre Nachricht..."
                 className={`min-h-[200px] text-base leading-relaxed ${
                   isMessageValid(messageText) ?

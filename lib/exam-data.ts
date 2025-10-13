@@ -157,6 +157,48 @@ export interface EvaluationResponse {
   evaluation: WritingEvaluation
 }
 
+// Function to fetch writing evaluation from backend
+export async function fetchWritingEvaluationFromAPI(queueId: string): Promise<EvaluationResponse> {
+  console.log(`Starting evaluation polling for queue_id: ${queueId}`)
+
+  // Step 1: Wait 10 seconds before starting to poll
+  await new Promise(resolve => setTimeout(resolve, 10000))
+
+  // Step 2: Poll for evaluation results
+  let attempts = 0
+  const maxAttempts = 60 // 5 minutes max (60 * 5 seconds)
+
+  console.log('Starting to poll for evaluation results...')
+
+  while (attempts < maxAttempts) {
+    const getResponse = await fetch(`https://usncnfhlvb.execute-api.eu-central-1.amazonaws.com/live/write?queue_id=${queueId}&modus=evaluate`)
+
+    if (getResponse.status === 404) {
+      // 404 means evaluation is not ready yet, continue polling
+      console.log(`Evaluation polling attempt ${attempts + 1}/${maxAttempts}: Evaluation not ready (404), waiting 5 seconds...`)
+    } else if (!getResponse.ok) {
+      // Other HTTP errors are actual failures
+      throw new Error(`Failed to fetch evaluation data: ${getResponse.status} ${getResponse.statusText}`)
+    } else {
+      // 200 response, check for payload
+      const getData = await getResponse.json()
+
+      if (getData.payload && getData.payload.evaluation) {
+        console.log(`Evaluation completed after ${attempts + 1} polling attempts`)
+        return getData.payload
+      } else {
+        console.log(`Evaluation polling attempt ${attempts + 1}/${maxAttempts}: No evaluation payload yet, waiting 5 seconds...`)
+      }
+    }
+
+    // Wait 5 seconds before next attempt
+    await new Promise(resolve => setTimeout(resolve, 5000))
+    attempts++
+  }
+
+  throw new Error('Timeout: Writing evaluation took too long')
+}
+
 // Function to simulate getting writing evaluation from backend
 // In production, this would be an API call
 export function getWritingEvaluationSample(): EvaluationResponse {
@@ -196,7 +238,7 @@ export async function getExamQuestions(level: CEFRLevel, module: ExamModule): Pr
   } else if (module === "Hören") {
     return { questions: getHörenQuestions(level) }
   } else if (module === "Schreiben") {
-    return { questions: getSchreibenQuestions(level) }
+    return await getSchreibenQuestions(level)
   } else {
     return { questions: getSprechenQuestions(level) }
   }
@@ -204,6 +246,7 @@ export async function getExamQuestions(level: CEFRLevel, module: ExamModule): Pr
 
 // Cache to prevent duplicate requests
 const requestCache = new Map<string, Promise<{ data: ReadingExamData; queueId: string }>>()
+const writingRequestCache = new Map<string, Promise<{ data: any; queueId: string }>>()
 
 async function fetchReadingExamFromAPI(level: CEFRLevel): Promise<{ data: ReadingExamData; queueId: string }> {
   const cacheKey = `reading-${level}`
@@ -288,6 +331,89 @@ async function fetchReadingExamFromAPI(level: CEFRLevel): Promise<{ data: Readin
   return promise
 }
 
+async function fetchWritingExamFromAPI(level: CEFRLevel): Promise<{ data: any; queueId: string }> {
+  const cacheKey = `writing-${level}`
+
+  // Return existing promise if request is already in progress
+  if (writingRequestCache.has(cacheKey)) {
+    return writingRequestCache.get(cacheKey)!
+  }
+
+  // Create new request promise
+  const requestPromise = async (): Promise<{ data: any; queueId: string }> => {
+    try {
+      console.log(`Initiating new writing exam generation for level ${level}`)
+
+      // Step 1: Make PUT request to initiate exam generation
+      const putResponse = await fetch(`https://usncnfhlvb.execute-api.eu-central-1.amazonaws.com/live/write?level=${level}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      })
+
+      if (!putResponse.ok) {
+        throw new Error(`Failed to initiate writing exam generation: ${putResponse.statusText}`)
+      }
+
+      const putData = await putResponse.json()
+      const queueId = putData.queue_id
+
+      if (!queueId) {
+        throw new Error('No queue_id received from writing API')
+      }
+
+      console.log(`Received writing queue_id: ${queueId}, waiting 10 seconds...`)
+
+      // Step 2: Wait 10 seconds
+      await new Promise(resolve => setTimeout(resolve, 10000))
+
+      // Step 3: Poll for results
+      let attempts = 0
+      const maxAttempts = 60 // 5 minutes max (60 * 5 seconds)
+
+      console.log('Starting to poll for writing exam results...')
+
+      while (attempts < maxAttempts) {
+        const getResponse = await fetch(`https://usncnfhlvb.execute-api.eu-central-1.amazonaws.com/live/write?queue_id=${queueId}&modus=generate`)
+
+        if (getResponse.status === 404) {
+          // 404 means exam is not ready yet, continue polling
+          console.log(`Polling attempt ${attempts + 1}/${maxAttempts}: Writing exam not ready (404), waiting 5 seconds...`)
+        } else if (!getResponse.ok) {
+          // Other HTTP errors are actual failures
+          throw new Error(`Failed to fetch writing exam data: ${getResponse.status} ${getResponse.statusText}`)
+        } else {
+          // 200 response, check for payload
+          const getData = await getResponse.json()
+
+          if (getData.payload) {
+            console.log(`Writing exam generation completed after ${attempts + 1} polling attempts`)
+            return { data: getData.payload, queueId }
+          } else {
+            console.log(`Polling attempt ${attempts + 1}/${maxAttempts}: No writing payload yet, waiting 5 seconds...`)
+          }
+        }
+
+        // Wait 5 seconds before next attempt
+        await new Promise(resolve => setTimeout(resolve, 5000))
+        attempts++
+      }
+
+      throw new Error('Timeout: Writing exam generation took too long')
+    } finally {
+      // Remove from cache when request completes (success or failure)
+      writingRequestCache.delete(cacheKey)
+    }
+  }
+
+  // Cache the promise
+  const promise = requestPromise()
+  writingRequestCache.set(cacheKey, promise)
+
+  return promise
+}
+
 export function convertReadingDataToQuestions(readingData: ReadingExamData): Question[] {
   const questions: Question[] = []
   let questionId = 1
@@ -325,6 +451,27 @@ export function convertReadingDataToQuestions(readingData: ReadingExamData): Que
       }
     })
   })
+
+  return questions
+}
+
+export function convertWritingDataToQuestions(writingData: any): Question[] {
+  const questions: Question[] = []
+
+  // Check if writingData has the expected structure from sample.json
+  if (writingData.teile && Array.isArray(writingData.teile)) {
+    writingData.teile.forEach((teil: any) => {
+      questions.push({
+        id: teil.teilNummer,
+        type: "text",
+        question: teil.anweisung,
+        context: `${teil.aufgabentyp}\n\n${teil.kontext}`,
+        correctAnswer: "",
+        // Add custom properties for writing exam
+        writingData: teil
+      } as Question & { writingData: any })
+    })
+  }
 
   return questions
 }
@@ -588,59 +735,55 @@ function getHörenQuestions(level: CEFRLevel): Question[] {
   return questions
 }
 
-function getSchreibenQuestions(level: CEFRLevel): Question[] {
-  // Return structured writing exam data based on sample.json format
-  const MOCK_WRITING_EXAM = {
-    "level": level,
-    "modul": "Schreiben",
-    "title": `Goethe-Zertifikat ${level} - Schreiben`,
-    "teile": [
-      {
-        "teilNummer": 1,
-        "anweisung": "Füllen Sie das Formular aus. Schreiben Sie zu jeder Information ein oder zwei Wörter.",
-        "aufgabentyp": "Formular ausfüllen",
-        "kontext": "Sie möchten an einem Sprachkurs teilnehmen und füllen das Anmeldeformular aus.",
-        "leitpunkte": [
-          "Nachname",
-          "Vorname",
-          "Adresse",
-          "Geburtsdatum",
-          "Geburtsort",
-          "Sprache"
-        ],
-        "wortzahl": "1-2 Wörter pro Feld"
-      },
-      {
-        "teilNummer": 2,
-        "anweisung": "Schreiben Sie eine kurze Nachricht an Ihren Freund/Ihre Freundin. Laden Sie ihn/sie zu Ihrem Geburtstag ein. Schreiben Sie ca. 30 Wörter.",
-        "aufgabentyp": "Kurze Nachricht",
-        "kontext": "Ihr Geburtstag ist nächste Woche. Sie möchten Ihren Freund oder Ihre Freundin einladen.",
-        "leitpunkte": [
-          "Wann ist Ihr Geburtstag?",
-          "Wo ist die Feier?",
-          "Was machen Sie?"
-        ],
-        "wortzahl": "ca. 30 Wörter"
-      }
-    ]
+async function getSchreibenQuestions(level: CEFRLevel): Promise<ExamData> {
+  try {
+    // Fetch exam data from API
+    const { data: writingData, queueId } = await fetchWritingExamFromAPI(level)
+    return {
+      questions: convertWritingDataToQuestions(writingData),
+      queueId
+    }
+  } catch (error) {
+    console.error('Failed to fetch writing exam from API:', error)
+
+    // Fallback to sample data (same structure as sample.json)
+    const FALLBACK_WRITING_EXAM = {
+      "level": level,
+      "modul": "Schreiben",
+      "title": `Goethe-Zertifikat ${level} - Schreiben`,
+      "teile": [
+        {
+          "teilNummer": 1,
+          "anweisung": "Füllen Sie das Formular aus. Schreiben Sie zu jeder Information ein oder zwei Wörter.",
+          "aufgabentyp": "Formular ausfüllen",
+          "kontext": "Sie möchten an einem Sprachkurs teilnehmen und füllen das Anmeldeformular aus.",
+          "leitpunkte": [
+            "Nachname",
+            "Vorname",
+            "Adresse",
+            "Geburtsdatum",
+            "Geburtsort",
+            "Sprache"
+          ],
+          "wortzahl": "1-2 Wörter pro Feld"
+        },
+        {
+          "teilNummer": 2,
+          "anweisung": "Schreiben Sie eine kurze Nachricht an Ihren Freund/Ihre Freundin. Laden Sie ihn/sie zu Ihrem Geburtstag ein. Schreiben Sie ca. 30 Wörter.",
+          "aufgabentyp": "Kurze Nachricht",
+          "kontext": "Ihr Geburtstag ist nächste Woche. Sie möchten Ihren Freund oder Ihre Freundin einladen.",
+          "leitpunkte": [
+            "Wann ist Ihr Geburtstag?",
+            "Wo ist die Feier?",
+            "Was machen Sie?"
+          ],
+          "wortzahl": "ca. 30 Wörter"
+        }
+      ]
+    }
+
+    return { questions: convertWritingDataToQuestions(FALLBACK_WRITING_EXAM) }
   }
-
-  // Generate separate questions for each Teil
-  const questions: Question[] = []
-
-  MOCK_WRITING_EXAM.teile.forEach((teil) => {
-    questions.push({
-      id: teil.teilNummer,
-      type: "text",
-      question: teil.anweisung,
-      context: `${teil.aufgabentyp}\n\n${teil.kontext}`,
-      correctAnswer: "",
-      // Add custom properties for writing exam
-      writingData: teil
-    } as Question & { writingData: any })
-  })
-
-  return questions
 }
 
 function getSprechenQuestions(level: CEFRLevel): Question[] {
