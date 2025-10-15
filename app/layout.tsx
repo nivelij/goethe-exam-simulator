@@ -8,6 +8,9 @@ export const metadata: Metadata = {
   title: 'Goethe Exam Simulator',
   description: 'Simulate for taking German exam on Goethe-Institut',
   generator: 'v0.app',
+  icons: {
+    icon: '/favicon.svg',
+  },
 }
 
 export default function RootLayout({
