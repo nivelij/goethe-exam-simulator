@@ -6,16 +6,19 @@ import { ModuleSelection } from "@/components/module-selection"
 import { ExamInterface } from "@/components/exam-interface"
 import { ResultsPage } from "@/components/results-page"
 import { ReviewPage } from "@/components/review-page"
-import type { WritingEvaluation } from "@/lib/exam-data"
+import type { WritingEvaluation, ListeningTeil, ListeningFlatQuestion, ListeningAnswerMap } from "@/lib/exam-data"
 
 interface ExamReviewData {
-  questions: any[]
-  answers: Record<number, any>
+  questions?: any[]
+  answers?: Record<number, any>
   score: number
   percentage: number
   isPass: boolean
   queueId?: string
   writingEvaluation?: WritingEvaluation
+  listeningParts?: ListeningTeil[]
+  listeningQuestions?: ListeningFlatQuestion[]
+  listeningAnswers?: ListeningAnswerMap
 }
 
 export type CEFRLevel = "A1" | "A2" | "B1" | "B2" | "C1" | "C2"
@@ -89,6 +92,9 @@ export default function Home() {
         onBack={handleBackFromReview}
         onRestart={handleRestart}
         writingEvaluation={reviewData.writingEvaluation}
+        listeningParts={reviewData.listeningParts}
+        listeningQuestions={reviewData.listeningQuestions}
+        listeningAnswers={reviewData.listeningAnswers}
       />
     )
   }

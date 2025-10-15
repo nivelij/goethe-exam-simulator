@@ -2,7 +2,7 @@
 
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { BookOpen, Headphones, PenTool, MessageCircle, ArrowLeft, Clock, FileText } from "lucide-react"
+import { BookOpen, Headphones, PenTool, MessageCircle, ArrowLeft, Clock } from "lucide-react"
 import type { CEFRLevel, ExamModule } from "@/app/page"
 import { examConfigs } from "@/lib/exam-data"
 
@@ -94,16 +94,11 @@ export function ModuleSelection({ level, onModuleSelect, onBack }: ModuleSelecti
                       <p className="mb-4 text-sm text-muted-foreground">{info.description}</p>
                       <p className="mb-6 text-xs text-muted-foreground">{info.details}</p>
 
-                      <div className="mb-6 grid grid-cols-3 gap-4 text-center">
+                      <div className="mb-6 grid grid-cols-2 gap-4 text-center">
                         <div className="rounded-lg bg-muted p-3">
                           <Clock className="mx-auto mb-1 h-4 w-4 text-muted-foreground" />
                           <div className="text-xs text-muted-foreground">Time</div>
                           <div className="text-sm font-semibold">{moduleConfig.duration} min</div>
-                        </div>
-                        <div className="rounded-lg bg-muted p-3">
-                          <FileText className="mx-auto mb-1 h-4 w-4 text-muted-foreground" />
-                          <div className="text-xs text-muted-foreground">Tasks</div>
-                          <div className="text-sm font-semibold">{moduleConfig.tasks}</div>
                         </div>
                         <div className="rounded-lg bg-muted p-3">
                           <div className="mx-auto mb-1 text-sm font-bold text-muted-foreground">★</div>

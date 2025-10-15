@@ -6,7 +6,7 @@ import { Card } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { ArrowLeft, Clock, CheckCircle2, AlertTriangle, Play, Loader2 } from "lucide-react"
 import type { CEFRLevel, ExamModule } from "@/app/page"
-import { getExamQuestions, examConfigs, getWritingEvaluationSample, fetchWritingEvaluationFromAPI, type Question, type ExamData, type WritingEvaluation } from "@/lib/exam-data"
+import { getExamQuestions, examConfigs, getWritingEvaluationSample, fetchWritingEvaluationFromAPI, type Question, type ExamData, type WritingEvaluation, type ListeningTeil, type ListeningFlatQuestion, type ListeningAnswerMap } from "@/lib/exam-data"
 import { LesenQuestion } from "@/components/questions/lesen-question"
 import { HörenQuestion } from "@/components/questions/horen-question"
 import { SchreibenQuestion } from "@/components/questions/schreiben-question"
@@ -15,22 +15,27 @@ import { SprechenQuestion } from "@/components/questions/sprechen-question"
 interface ExamInterfaceProps {
   level: CEFRLevel
   module: ExamModule
-  onComplete: (score: number, total: number, reviewData: ExamReviewData) => void
+  onComplete: (score: number, total: number, reviewData: ExamInterfaceReviewData) => void
   onBack: () => void
 }
 
-interface ExamReviewData {
-  questions: Question[]
-  answers: Record<number, any>
+interface ExamInterfaceReviewData {
+  questions?: Question[]
+  answers?: Record<number, any>
   score: number
   percentage: number
   isPass: boolean
   queueId?: string
   writingEvaluation?: WritingEvaluation
+  listeningParts?: ListeningTeil[]
+  listeningQuestions?: ListeningFlatQuestion[]
+  listeningAnswers?: ListeningAnswerMap
 }
 
 export function ExamInterface({ level, module, onComplete, onBack }: ExamInterfaceProps) {
   const [questions, setQuestions] = useState<Question[]>([])
+  const [listeningParts, setListeningParts] = useState<ListeningTeil[]>([])
+  const [listeningQuestions, setListeningQuestions] = useState<ListeningFlatQuestion[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [loadingError, setLoadingError] = useState<string | null>(null)
   const [queueId, setQueueId] = useState<string | null>(null)
@@ -54,11 +59,23 @@ export function ExamInterface({ level, module, onComplete, onBack }: ExamInterfa
         setLoadingError(null)
         const examData = await getExamQuestions(level, module)
 
-        // Don't update state if component was unmounted
-        if (!isCancelled) {
-          setQuestions(examData.questions)
-          setQueueId(examData.queueId || null)
-        }
+         // Don't update state if component was unmounted
+         if (!isCancelled) {
+           setQuestions(examData.questions ?? [])
+           setQueueId(examData.queueId || null)
+           if (module === "Hören") {
+             setListeningParts(examData.listeningParts ?? [])
+             setListeningQuestions(examData.listeningQuestions ?? [])
+           } else {
+             setListeningParts([])
+             setListeningQuestions([])
+           }
+           setAnswers({})
+           setCurrentQuestionIndex(0)
+           setTimeRemaining(moduleConfig.duration * 60)
+           setShowTimeWarning(false)
+         }
+
       } catch (error) {
         console.error('Failed to load questions:', error)
         if (!isCancelled) {
@@ -109,7 +126,7 @@ export function ExamInterface({ level, module, onComplete, onBack }: ExamInterfa
   }
 
   const handleAnswer = (answer: any) => {
-    setAnswers({ ...answers, [currentQuestionIndex]: answer })
+    setAnswers((prev) => ({ ...prev, [currentQuestionIndex]: answer }))
   }
 
   const handleNext = () => {
@@ -133,6 +150,7 @@ export function ExamInterface({ level, module, onComplete, onBack }: ExamInterfa
     let percentage = 0
     let isPass = false
     let writingEvaluation: WritingEvaluation | undefined
+    let listeningAnswerAggregate: ListeningAnswerMap = {}
 
     // Handle writing module with detailed evaluation
     if (module === "Schreiben") {
@@ -186,6 +204,25 @@ export function ExamInterface({ level, module, onComplete, onBack }: ExamInterfa
       } finally {
         setIsEvaluating(false)
       }
+    } else if (module === "Hören") {
+      listeningAnswerAggregate = Object.values(answers).reduce<ListeningAnswerMap>((acc, value) => {
+        if (value && typeof value === "object") {
+          Object.entries(value as ListeningAnswerMap).forEach(([key, val]) => {
+            acc[Number(key)] = val
+          })
+        }
+        return acc
+      }, {})
+
+      listeningQuestions.forEach((question) => {
+        if (listeningAnswerAggregate[question.globalIndex] === question.correctAnswerIndex) {
+          score += 1
+        }
+      })
+
+      const totalListeningQuestions = listeningQuestions.length
+      percentage = totalListeningQuestions > 0 ? Math.round((score / totalListeningQuestions) * 100) : 0
+      isPass = percentage >= examConfig.passScore
     } else {
       // Handle other modules with regular scoring
       questions.forEach((q, index) => {
@@ -202,17 +239,30 @@ export function ExamInterface({ level, module, onComplete, onBack }: ExamInterfa
     }
 
     // Prepare participant answers array
-    const participantAnswers = questions.map((_, index) => answers[index] ?? null)
+    const participantAnswers = module === "Hören"
+      ? listeningQuestions.map((question) =>
+          listeningAnswerAggregate && listeningAnswerAggregate[question.globalIndex] !== undefined
+            ? listeningAnswerAggregate[question.globalIndex]
+            : null
+        )
+      : questions.map((_, index) => answers[index] ?? null)
 
     // Create review data
-    const reviewData: ExamReviewData = {
-      questions,
-      answers,
+    const reviewData: ExamInterfaceReviewData = {
       score,
       percentage,
       isPass,
       queueId: queueId || undefined,
       writingEvaluation
+    }
+
+    if (module === "Hören") {
+      reviewData.listeningParts = listeningParts
+      reviewData.listeningQuestions = listeningQuestions
+      reviewData.listeningAnswers = listeningAnswerAggregate ?? {}
+    } else {
+      reviewData.questions = questions
+      reviewData.answers = answers
     }
 
     // Call API to store results if we have a queueId (for Lesen module only, Schreiben is handled above)
@@ -247,7 +297,16 @@ export function ExamInterface({ level, module, onComplete, onBack }: ExamInterfa
   }
 
   const currentQuestion = questions[currentQuestionIndex]
+  const currentListeningTeil = module === "Hören" ? listeningParts[currentQuestionIndex] : undefined
+  const totalQuestionsDisplay = module === "Hören" ? listeningQuestions.length : questions.length
   const progress = questions.length > 0 ? ((currentQuestionIndex + 1) / questions.length) * 100 : 0
+  const isIndexAnswered = (index: number) => {
+    const value = answers[index]
+    if (module === "Hören") {
+      return value && typeof value === "object" && Object.keys(value).length > 0
+    }
+    return value !== undefined && value !== null && value !== ""
+  }
   const isLowTime = timeRemaining <= 300 && timeRemaining > 0 // Last 5 minutes
   const isCriticalTime = timeRemaining <= 60 && timeRemaining > 0 // Last minute
 
@@ -328,7 +387,7 @@ export function ExamInterface({ level, module, onComplete, onBack }: ExamInterfa
               <div className="bg-muted rounded-lg p-4">
                 <div className="mx-auto mb-2 text-xl">📝</div>
                 <div className="font-semibold">Questions</div>
-                <div className="text-lg font-bold text-primary">{questions.length}</div>
+                <div className="text-lg font-bold text-primary">{totalQuestionsDisplay}</div>
               </div>
               <div className="bg-muted rounded-lg p-4">
                 <div className="mx-auto mb-2 text-xl">🎯</div>
@@ -347,7 +406,7 @@ export function ExamInterface({ level, module, onComplete, onBack }: ExamInterfa
                 <li>• You can navigate between questions freely</li>
                 <li>• Unanswered questions will be marked as incorrect</li>
                 <li>• Make sure you have a stable internet connection</li>
-                {module === "Hören" && <li>• Audio will be played twice for each question</li>}
+                {module === "Hören" && <li>• Audio kann nur abgespielt werden und lässt sich nicht pausieren</li>}
               </ul>
             </div>
 
@@ -451,10 +510,10 @@ export function ExamInterface({ level, module, onComplete, onBack }: ExamInterfa
                     onAnswer={handleAnswer}
                   />
                 )}
-                {module === "Hören" && (
+                {module === "Hören" && currentListeningTeil && (
                   <HörenQuestion
-                    question={currentQuestion}
-                    answer={answers[currentQuestionIndex]}
+                    teil={currentListeningTeil}
+                    answers={answers[currentQuestionIndex] as ListeningAnswerMap | undefined}
                     onAnswer={handleAnswer}
                   />
                 )}
@@ -488,11 +547,11 @@ export function ExamInterface({ level, module, onComplete, onBack }: ExamInterfa
                   className={`h-8 w-8 rounded-full text-xs font-semibold transition-all ${
                     index === currentQuestionIndex
                       ? "bg-accent text-accent-foreground scale-110"
-                      : answers[index] !== undefined
+                      : isIndexAnswered(index)
                       ? "bg-primary text-primary-foreground"
                       : "bg-white border-2 border-muted text-muted-foreground hover:bg-muted/20"
                   }`}
-                  title={`Question ${index + 1}${answers[index] !== undefined ? ' (Answered)' : ''}`}
+                  title={`Question ${index + 1}${isIndexAnswered(index) ? ' (Answered)' : ''}`}
                 >
                   {index + 1}
                 </button>

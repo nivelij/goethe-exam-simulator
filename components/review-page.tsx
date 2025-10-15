@@ -1,11 +1,12 @@
 "use client"
 
+import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { ArrowLeft, CheckCircle2, XCircle, RotateCcw } from "lucide-react"
+import { ArrowLeft, CheckCircle2, XCircle, RotateCcw, Volume2 } from "lucide-react"
 import type { CEFRLevel, ExamModule } from "@/app/page"
-import type { Question, WritingEvaluation } from "@/lib/exam-data"
+import type { Question, WritingEvaluation, ListeningTeil, ListeningFlatQuestion, ListeningAnswerMap } from "@/lib/exam-data"
 import { WritingEvaluationPage } from "./writing-evaluation-page"
 
 interface ReviewPageProps {
@@ -19,6 +20,9 @@ interface ReviewPageProps {
   onBack: () => void
   onRestart: () => void
   writingEvaluation?: WritingEvaluation
+  listeningParts?: ListeningTeil[]
+  listeningQuestions?: ListeningFlatQuestion[]
+  listeningAnswers?: ListeningAnswerMap
 }
 
 export function ReviewPage({
@@ -31,8 +35,13 @@ export function ReviewPage({
   isPass,
   onBack,
   onRestart,
-  writingEvaluation
+  writingEvaluation,
+  listeningParts,
+  listeningQuestions,
+  listeningAnswers
 }: ReviewPageProps) {
+  const isListeningReview = module === "Hören" && !!listeningParts?.length && !!listeningQuestions?.length && !!listeningAnswers
+  const totalQuestionCount = isListeningReview ? listeningQuestions!.length : questions?.length ?? 0
 
   // If this is a writing module with evaluation data, use the specialized component
   if (writingEvaluation) {
@@ -48,7 +57,7 @@ export function ReviewPage({
   }
 
   // Early return if questions or answers are not provided for regular review
-  if (!questions || !answers) {
+  if (!isListeningReview && (!questions || !answers)) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
@@ -58,6 +67,9 @@ export function ReviewPage({
       </div>
     )
   }
+
+  const resolvedQuestions = questions ?? []
+  const resolvedAnswers = answers ?? {}
 
   const getAnswerDisplay = (question: Question, participantAnswer: any) => {
     if (question.type === "multiple-choice") {
@@ -103,9 +115,10 @@ export function ReviewPage({
                   {level} - {module} Review
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  Score: {score}/{questions.length} ({percentage}%)
+                  Score: {score}/{totalQuestionCount} ({percentage}%)
                 </div>
-              </div>
+               </div>
+
             </div>
             <div className="flex items-center gap-2">
               <Badge variant={isPass ? "default" : "destructive"}>
@@ -125,101 +138,200 @@ export function ReviewPage({
             </p>
           </div>
 
-          <div className="space-y-6">
-            {questions.map((question, index) => {
-                  const participantAnswer = answers[index]
-                  const correct = isCorrect(question, participantAnswer)
+           <div className="space-y-6">
+             {isListeningReview
+               ? listeningParts!.map((teil) => (
+                   <Card key={teil.teilNummer} className="p-6 space-y-6">
+                     <div className="flex flex-col gap-4">
+                       <div>
+                         <div className="text-xs font-semibold uppercase tracking-wide text-accent">Teil {teil.teilNummer}</div>
+                         <h3 className="text-xl font-bold text-card-foreground">{teil.anweisung}</h3>
+                       </div>
+                       <ListeningAudioPlayer encodedAudio={teil.encodedAudio} />
+                     </div>
 
-                  return (
-                    <Card key={question.id} className="p-6">
-                      <div className="flex items-start gap-4">
-                        <div className="flex-shrink-0">
-                          <div className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold ${
-                            correct
-                              ? "bg-green-500 text-white"
-                              : "bg-red-500 text-white"
-                          }`}>
-                            {index + 1}
-                          </div>
-                        </div>
+                     <div className="space-y-6">
+                       {teil.audioSzenarien.map((szenario) => (
+                         <div key={`${teil.teilNummer}-${szenario.szenarioNummer}`} className="space-y-4">
+                           <div>
+                             <div className="text-sm font-semibold uppercase tracking-wide text-accent">Szenario {szenario.szenarioNummer} ({szenario.wiedergabe})</div>
+                             {szenario.szenarioBeschreibung?.ort && (
+                               <p className="text-sm text-muted-foreground">Ort: {szenario.szenarioBeschreibung.ort}</p>
+                             )}
+                           </div>
 
-                        <div className="flex-1 space-y-4">
-                          {/* Question */}
-                          <div>
-                            <h3 className="text-lg font-semibold mb-2">{question.question}</h3>
-                            {question.context && (
-                              <div className="rounded-lg bg-muted p-3 mb-3">
-                                <p className="text-sm whitespace-pre-line">{question.context}</p>
-                              </div>
-                            )}
-                          </div>
+                           <div className="space-y-4">
+                             {szenario.fragen.map((frage) => {
+                               const participantAnswerIndex = listeningAnswers?.[frage.globalIndex]
+                               const correct = participantAnswerIndex === frage.correctAnswerIndex
+                               const participantText = participantAnswerIndex !== undefined
+                                 ? frage.options[participantAnswerIndex]?.text ?? "No answer"
+                                 : "No answer"
+                               const correctText = frage.options[frage.correctAnswerIndex]?.text ?? "Sample answer expected"
 
-                          {/* Answer Comparison */}
-                          <div className="grid gap-4 md:grid-cols-2">
-                            {/* Your Answer */}
-                            <div className="space-y-2">
-                              <span className="text-sm font-medium flex items-center gap-2">
-                                {correct ? (
-                                  <CheckCircle2 className="h-4 w-4 text-green-600" />
-                                ) : (
-                                  <XCircle className="h-4 w-4 text-red-600" />
-                                )}
-                                Your Answer:
-                              </span>
-                              <div className={`rounded-lg border-2 p-3 ${
-                                correct
-                                  ? "border-green-200 bg-green-50"
-                                  : "border-red-200 bg-red-50"
-                              }`}>
-                                <p className="text-sm">
-                                  {getAnswerDisplay(question, participantAnswer)}
-                                </p>
-                              </div>
-                            </div>
+                               return (
+                                 <div key={frage.globalIndex} className="space-y-3 rounded-lg border border-border/60 bg-card p-5">
+                                   <div className="flex items-start gap-3">
+                                     <div className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold ${
+                                       correct ? "bg-green-500 text-white" : "bg-red-500 text-white"
+                                     }`}>
+                                       {frage.frageNummer}
+                                     </div>
+                                     <div className="flex-1">
+                                       <h4 className="text-lg font-semibold text-card-foreground">{frage.text}</h4>
+                                     </div>
+                                   </div>
 
-                            {/* Correct Answer */}
-                            <div className="space-y-2">
-                              <span className="text-sm font-medium">Correct Answer:</span>
-                              <div className="rounded-lg border-2 border-green-200 bg-green-50 p-3">
-                                <p className="text-sm">
-                                  {getCorrectAnswerDisplay(question)}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
+                                   <div className="grid gap-4 md:grid-cols-2">
+                                     <div className="space-y-2">
+                                       <span className="text-sm font-medium flex items-center gap-2">
+                                         {correct ? (
+                                           <CheckCircle2 className="h-4 w-4 text-green-600" />
+                                         ) : (
+                                           <XCircle className="h-4 w-4 text-red-600" />
+                                         )}
+                                         Your Answer:
+                                       </span>
+                                       <div className={`rounded-lg border-2 p-3 ${
+                                         correct ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50"
+                                       }`}>
+                                         <p className="text-sm">{participantText}</p>
+                                       </div>
+                                     </div>
 
-                          {/* Multiple Choice Options (if applicable) */}
-                          {question.type === "multiple-choice" && question.options && (
-                            <div className="space-y-2">
-                              <span className="text-sm font-medium">Available Options:</span>
-                              <div className="grid gap-1">
-                                {question.options.map((option, optionIndex) => (
-                                  <div
-                                    key={optionIndex}
-                                    className={`rounded p-2 text-sm ${
-                                      optionIndex === question.correctAnswer
-                                        ? "bg-green-100 text-green-800"
-                                        : optionIndex === participantAnswer
-                                        ? "bg-red-100 text-red-800"
-                                        : "bg-gray-50 text-gray-600"
-                                    }`}
-                                  >
-                                    {String.fromCharCode(65 + optionIndex)}. {option}
-                                    {optionIndex === question.correctAnswer && " ✓"}
-                                    {optionIndex === participantAnswer && optionIndex !== question.correctAnswer && " ✗"}
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </Card>
-                  )
-                })}
-              </div>
+                                     <div className="space-y-2">
+                                       <span className="text-sm font-medium">Correct Answer:</span>
+                                       <div className="rounded-lg border-2 border-green-200 bg-green-50 p-3">
+                                         <p className="text-sm">{correctText}</p>
+                                       </div>
+                                     </div>
+                                   </div>
 
-          {/* Action Buttons */}
+                                   <div className="space-y-2">
+                                     <span className="text-sm font-medium">Available Options:</span>
+                                     <div className="grid gap-1">
+                                       {frage.options.map((option, optionIndex) => (
+                                         <div
+                                           key={`${frage.globalIndex}-option-${optionIndex}`}
+                                           className={`rounded p-2 text-sm ${
+                                             optionIndex === frage.correctAnswerIndex
+                                               ? "bg-green-100 text-green-800"
+                                               : optionIndex === participantAnswerIndex
+                                               ? "bg-red-100 text-red-800"
+                                               : "bg-gray-50 text-gray-600"
+                                           }`}
+                                         >
+                                           {String.fromCharCode(65 + optionIndex)}. {option.text}
+                                           {optionIndex === frage.correctAnswerIndex && " ✓"}
+                                           {optionIndex === participantAnswerIndex && optionIndex !== frage.correctAnswerIndex && " ✗"}
+                                         </div>
+                                       ))}
+                                     </div>
+                                   </div>
+                                 </div>
+                               )
+                             })}
+                           </div>
+                         </div>
+                       ))}
+                     </div>
+                   </Card>
+                 ))
+               : resolvedQuestions.map((question, index) => {
+                   const participantAnswer = resolvedAnswers[index]
+                   const correct = isCorrect(question, participantAnswer)
+
+                   return (
+                     <Card key={question.id} className="p-6">
+                       <div className="flex items-start gap-4">
+                         <div className="flex-shrink-0">
+                           <div className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold ${
+                             correct
+                               ? "bg-green-500 text-white"
+                               : "bg-red-500 text-white"
+                           }`}>
+                             {index + 1}
+                           </div>
+                         </div>
+
+                         <div className="flex-1 space-y-4">
+                           {/* Question */}
+                           <div>
+                             <h3 className="text-lg font-semibold mb-2">{question.question}</h3>
+                             {question.context && (
+                               <div className="rounded-lg bg-muted p-3 mb-3">
+                                 <p className="text-sm whitespace-pre-line">{question.context}</p>
+                               </div>
+                             )}
+                           </div>
+
+                           {/* Answer Comparison */}
+                           <div className="grid gap-4 md:grid-cols-2">
+                             {/* Your Answer */}
+                             <div className="space-y-2">
+                               <span className="text-sm font-medium flex items-center gap-2">
+                                 {correct ? (
+                                   <CheckCircle2 className="h-4 w-4 text-green-600" />
+                                 ) : (
+                                   <XCircle className="h-4 w-4 text-red-600" />
+                                 )}
+                                 Your Answer:
+                               </span>
+                               <div className={`rounded-lg border-2 p-3 ${
+                                 correct
+                                   ? "border-green-200 bg-green-50"
+                                   : "border-red-200 bg-red-50"
+                               }`}>
+                                 <p className="text-sm">
+                                   {getAnswerDisplay(question, participantAnswer)}
+                                 </p>
+                               </div>
+                             </div>
+
+                             {/* Correct Answer */}
+                             <div className="space-y-2">
+                               <span className="text-sm font-medium">Correct Answer:</span>
+                               <div className="rounded-lg border-2 border-green-200 bg-green-50 p-3">
+                                 <p className="text-sm">
+                                   {getCorrectAnswerDisplay(question)}
+                                 </p>
+                               </div>
+                             </div>
+                           </div>
+
+                           {/* Multiple Choice Options (if applicable) */}
+                           {question.type === "multiple-choice" && question.options && (
+                             <div className="space-y-2">
+                               <span className="text-sm font-medium">Available Options:</span>
+                               <div className="grid gap-1">
+                                 {question.options.map((option, optionIndex) => (
+                                   <div
+                                     key={optionIndex}
+                                     className={`rounded p-2 text-sm ${
+                                       optionIndex === question.correctAnswer
+                                         ? "bg-green-100 text-green-800"
+                                         : optionIndex === participantAnswer
+                                         ? "bg-red-100 text-red-800"
+                                         : "bg-gray-50 text-gray-600"
+                                     }`}
+                                   >
+                                     {String.fromCharCode(65 + optionIndex)}. {option}
+                                     {optionIndex === question.correctAnswer && " ✓"}
+                                     {optionIndex === participantAnswer && optionIndex !== question.correctAnswer && " ✗"}
+                                   </div>
+                                 ))}
+                               </div>
+                             </div>
+                           )}
+                         </div>
+                       </div>
+                     </Card>
+                   )
+                 })}
+            </div>
+
+           {/* Action Buttons */}
+
           <div className="mt-8 flex flex-col sm:flex-row gap-4 justify-center">
             <Button variant="outline" onClick={onBack} className="min-w-[200px]">
               <ArrowLeft className="mr-2 h-4 w-4" />
@@ -232,6 +344,74 @@ export function ReviewPage({
           </div>
         </div>
       </main>
+    </div>
+  )
+}
+
+function ListeningAudioPlayer({ encodedAudio }: { encodedAudio: string }) {
+  const audioRef = useRef<HTMLAudioElement>(null)
+  const [audioSrc, setAudioSrc] = useState<string | null>(null)
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [hasStarted, setHasStarted] = useState(false)
+
+  useEffect(() => {
+    let url: string | null = null
+    setIsPlaying(false)
+    setHasStarted(false)
+
+    try {
+      const binaryString = atob(encodedAudio)
+      const len = binaryString.length
+      const bytes = new Uint8Array(len)
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i)
+      }
+
+      const blob = new Blob([bytes.buffer], { type: "audio/mpeg" })
+      url = URL.createObjectURL(blob)
+      setAudioSrc(url)
+    } catch (error) {
+      console.error("Failed to decode listening audio for review", error)
+      setAudioSrc(null)
+    }
+
+    return () => {
+      if (url) {
+        URL.revokeObjectURL(url)
+      }
+    }
+  }, [encodedAudio])
+
+  const handlePlay = async () => {
+    if (!audioRef.current || !audioSrc) return
+
+    try {
+      audioRef.current.currentTime = 0
+      setHasStarted(true)
+      await audioRef.current.play()
+    } catch (error) {
+      console.error("Failed to play listening audio for review", error)
+    }
+  }
+
+  return (
+    <div className="flex flex-col items-start gap-2">
+      <Button onClick={handlePlay} size="sm" className="gap-2" disabled={!audioSrc || isPlaying}>
+        <Volume2 className="h-4 w-4" />
+        {hasStarted ? (isPlaying ? "Wiedergabe läuft" : "Erneut abspielen") : "Audio abspielen"}
+      </Button>
+      <audio
+        ref={audioRef}
+        src={audioSrc ?? undefined}
+        onPlaying={() => setIsPlaying(true)}
+        onEnded={() => {
+          setIsPlaying(false)
+          if (audioRef.current) {
+            audioRef.current.currentTime = 0
+          }
+        }}
+        preload="auto"
+      />
     </div>
   )
 }

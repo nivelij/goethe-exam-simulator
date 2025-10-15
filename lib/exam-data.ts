@@ -1,4 +1,5 @@
 import type { CEFRLevel, ExamModule } from "@/app/page"
+import listeningExamSample from "@/audio.json"
 
 export interface Question {
   id: number
@@ -9,6 +10,97 @@ export interface Question {
   correctAnswer?: string | number
   audioUrl?: string
 }
+
+export interface ListeningExamRaw {
+  level: string
+  modul: string
+  title: string
+  teile: ListeningTeilRaw[]
+}
+
+export interface ListeningTeilRaw {
+  teilNummer: number
+  anweisung: string
+  audioSzenarien: ListeningScenarioRaw[]
+  encodedAudio: string
+}
+
+export interface ListeningScenarioRaw {
+  szenarioNummer: number
+  wiedergabe: string
+  szenarioBeschreibung: {
+    ort?: string
+    hintergrundgeraeusche?: string
+    sprecher?: {
+      sprecherID: string
+      gender: string
+      rolle: string
+      stimme: string
+    }[]
+  }
+  transkript: {
+    sprecherID: string
+    text: string
+  }[]
+  fragen: ListeningQuestionRaw[]
+}
+
+export interface ListeningQuestionRaw {
+  frageNummer: number
+  frageText: string
+  format: "Richtig/Falsch" | "Multiple-Choice"
+  optionen: Record<string, string>
+  loesung: string
+}
+
+export interface ListeningQuestionOption {
+  key: string
+  text: string
+}
+
+export interface ListeningQuestionItem {
+  globalIndex: number
+  frageNummer: number
+  text: string
+  options: ListeningQuestionOption[]
+  correctAnswerIndex: number
+  solutionKey: string
+}
+
+export interface ListeningScenario {
+  szenarioNummer: number
+  wiedergabe: string
+  szenarioBeschreibung: ListeningScenarioRaw["szenarioBeschreibung"]
+  transkript: ListeningScenarioRaw["transkript"]
+  fragen: ListeningQuestionItem[]
+}
+
+export interface ListeningTeil {
+  teilNummer: number
+  anweisung: string
+  audioSzenarien: ListeningScenario[]
+  encodedAudio: string
+}
+
+export interface ListeningFlatQuestion {
+  teilNummer: number
+  szenarioNummer: number
+  globalIndex: number
+  frageNummer: number
+  text: string
+  options: ListeningQuestionOption[]
+  correctAnswerIndex: number
+}
+
+export interface ListeningExamDataResult {
+  level: string
+  modul: string
+  title: string
+  teile: ListeningTeil[]
+  flatQuestions: ListeningFlatQuestion[]
+}
+
+export type ListeningAnswerMap = Record<number, number>
 
 export interface ReadingText {
   titel: string
@@ -136,6 +228,8 @@ export const examConfigs: Record<CEFRLevel, ExamConfig> = {
 export interface ExamData {
   questions: Question[]
   queueId?: string
+  listeningParts?: ListeningTeil[]
+  listeningQuestions?: ListeningFlatQuestion[]
 }
 
 // Evaluation data types based on sample_resp.json
@@ -236,7 +330,7 @@ export async function getExamQuestions(level: CEFRLevel, module: ExamModule): Pr
   if (module === "Lesen") {
     return await getLesenQuestions(level)
   } else if (module === "Hören") {
-    return { questions: getHörenQuestions(level) }
+    return getListeningQuestions(level)
   } else if (module === "Schreiben") {
     return await getSchreibenQuestions(level)
   } else {
@@ -476,6 +570,66 @@ export function convertWritingDataToQuestions(writingData: any): Question[] {
   return questions
 }
 
+function convertListeningData(rawData: ListeningExamRaw): ListeningExamDataResult {
+  let globalIndex = 0
+  const flatQuestions: ListeningFlatQuestion[] = []
+
+  const teile: ListeningTeil[] = rawData.teile.map((teil) => {
+    const audioSzenarien = teil.audioSzenarien.map((szenario) => {
+      const fragen = szenario.fragen.map((frage) => {
+        const optionEntries = Object.entries(frage.optionen || {})
+        const options: ListeningQuestionOption[] = optionEntries.map(([key, text]) => ({ key, text }))
+        const correctAnswerIndex = Math.max(optionEntries.findIndex(([key]) => key === frage.loesung), 0)
+
+        const questionItem: ListeningQuestionItem = {
+          globalIndex,
+          frageNummer: frage.frageNummer,
+          text: frage.frageText,
+          options,
+          correctAnswerIndex,
+          solutionKey: frage.loesung
+        }
+
+        flatQuestions.push({
+          teilNummer: teil.teilNummer,
+          szenarioNummer: szenario.szenarioNummer,
+          globalIndex,
+          frageNummer: frage.frageNummer,
+          text: frage.frageText,
+          options,
+          correctAnswerIndex
+        })
+
+        globalIndex += 1
+        return questionItem
+      })
+
+      return {
+        szenarioNummer: szenario.szenarioNummer,
+        wiedergabe: szenario.wiedergabe,
+        szenarioBeschreibung: szenario.szenarioBeschreibung,
+        transkript: szenario.transkript,
+        fragen
+      }
+    })
+
+    return {
+      teilNummer: teil.teilNummer,
+      anweisung: teil.anweisung,
+      audioSzenarien,
+      encodedAudio: teil.encodedAudio
+    }
+  })
+
+  return {
+    level: rawData.level,
+    modul: rawData.modul,
+    title: rawData.title,
+    teile,
+    flatQuestions
+  }
+}
+
 async function getLesenQuestions(level: CEFRLevel): Promise<ExamData> {
   try {
     // Fetch exam data from API
@@ -712,27 +866,26 @@ async function getLesenQuestions(level: CEFRLevel): Promise<ExamData> {
   }
 }
 
-function getHörenQuestions(level: CEFRLevel): Question[] {
-  const config = examConfigs[level]
-  const numberOfQuestions = config.modules.Hören.tasks * 3 // 3 questions per listening task
+function getListeningQuestions(level: CEFRLevel): ExamData {
+  const rawData = listeningExamSample as ListeningExamRaw
+  const normalized = convertListeningData(rawData)
 
-  const questions: Question[] = []
-  for (let i = 0; i < numberOfQuestions; i++) {
-    const audioTypes = ["Dialog", "Monolog", "Durchsage", "Interview", "Diskussion"]
-    const randomType = audioTypes[Math.floor(Math.random() * audioTypes.length)]
-
-    questions.push({
-      id: i + 1,
-      type: "audio",
-      context: `Sie hören einen ${randomType}. (Audio wird zweimal abgespielt)`,
-      question: `Hörtext ${i + 1}: Was ist das Hauptthema?`,
-      options: ["Option A", "Option B", "Option C", "Option D"],
-      correctAnswer: Math.floor(Math.random() * 4),
-      audioUrl: `/audio/sample-${level.toLowerCase()}-${i + 1}.mp3`,
-    })
+  if (normalized.level !== level) {
+    console.warn(`Listening sample level (${normalized.level}) does not match requested level (${level}). Using sample data as fallback.`)
   }
 
-  return questions
+  const navigationQuestions: Question[] = normalized.teile.map((teil, index) => ({
+    id: teil.teilNummer ?? index + 1,
+    type: "audio",
+    question: `Teil ${teil.teilNummer}`,
+    context: teil.anweisung
+  }))
+
+  return {
+    questions: navigationQuestions,
+    listeningParts: normalized.teile,
+    listeningQuestions: normalized.flatQuestions
+  }
 }
 
 async function getSchreibenQuestions(level: CEFRLevel): Promise<ExamData> {
