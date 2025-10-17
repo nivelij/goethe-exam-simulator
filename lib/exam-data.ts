@@ -22,12 +22,13 @@ export interface ListeningTeilRaw {
   teilNummer: number
   anweisung: string
   audioSzenarien: ListeningScenarioRaw[]
-  encodedAudio: string
+  encodedAudio?: string
 }
 
 export interface ListeningScenarioRaw {
   szenarioNummer: number
   wiedergabe: string
+  encodedAudio?: string
   szenarioBeschreibung: {
     ort?: string
     hintergrundgeraeusche?: string
@@ -38,7 +39,7 @@ export interface ListeningScenarioRaw {
       stimme: string
     }[]
   }
-  transkript: {
+  transkript?: {
     sprecherID: string
     text: string
   }[]
@@ -70,8 +71,9 @@ export interface ListeningQuestionItem {
 export interface ListeningScenario {
   szenarioNummer: number
   wiedergabe: string
+  encodedAudio?: string
   szenarioBeschreibung: ListeningScenarioRaw["szenarioBeschreibung"]
-  transkript: ListeningScenarioRaw["transkript"]
+  transkript?: ListeningScenarioRaw["transkript"]
   fragen: ListeningQuestionItem[]
 }
 
@@ -79,7 +81,7 @@ export interface ListeningTeil {
   teilNummer: number
   anweisung: string
   audioSzenarien: ListeningScenario[]
-  encodedAudio: string
+  encodedAudio?: string
 }
 
 export interface ListeningFlatQuestion {
@@ -607,8 +609,9 @@ function convertListeningData(rawData: ListeningExamRaw): ListeningExamDataResul
       return {
         szenarioNummer: szenario.szenarioNummer,
         wiedergabe: szenario.wiedergabe,
+        encodedAudio: szenario.encodedAudio,
         szenarioBeschreibung: szenario.szenarioBeschreibung,
-        transkript: szenario.transkript,
+        transkript: szenario.transkript ?? [],
         fragen
       }
     })
@@ -874,12 +877,28 @@ function getListeningQuestions(level: CEFRLevel): ExamData {
     console.warn(`Listening sample level (${normalized.level}) does not match requested level (${level}). Using sample data as fallback.`)
   }
 
-  const navigationQuestions: Question[] = normalized.teile.map((teil, index) => ({
-    id: teil.teilNummer ?? index + 1,
-    type: "audio",
-    question: `Teil ${teil.teilNummer}`,
-    context: teil.anweisung
-  }))
+  const navigationQuestions: Question[] = normalized.flatQuestions.map((flatQuestion, index) => {
+    const teil = normalized.teile.find((item) => item.teilNummer === flatQuestion.teilNummer)
+    const scenario = teil?.audioSzenarien.find((item) => item.szenarioNummer === flatQuestion.szenarioNummer)
+
+    const contextSections: string[] = []
+    if (teil?.anweisung) {
+      contextSections.push(teil.anweisung)
+    }
+    if (scenario?.szenarioBeschreibung?.ort) {
+      contextSections.push(`Ort: ${scenario.szenarioBeschreibung.ort}`)
+    }
+    if (scenario?.szenarioBeschreibung?.hintergrundgeraeusche) {
+      contextSections.push(`Geräusche: ${scenario.szenarioBeschreibung.hintergrundgeraeusche}`)
+    }
+
+    return {
+      id: flatQuestion.globalIndex + 1,
+      type: "audio",
+      question: `Frage ${index + 1}`,
+      context: contextSections.join("\n\n")
+    }
+  })
 
   return {
     questions: navigationQuestions,

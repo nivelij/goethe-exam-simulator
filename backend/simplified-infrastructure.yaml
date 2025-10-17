@@ -6,6 +6,10 @@ Parameters:
     Type: String
     Description: OpenAI API Key
     NoEcho: true
+  GeminiApiKey:
+    Type: String
+    Description: Google Gemini API Key
+    NoEcho: true
   DatabaseUrl:
     Type: String
     Description: CockroachDB connection string
@@ -79,6 +83,8 @@ Resources:
           Environment:
             - Name: OPENAI_API_KEY
               Value: !Ref OpenAIApiKey
+            - Name: GEMINI_API_KEY
+              Value: !Ref GeminiApiKey
             - Name: DATABASE_URL
               Value: !Ref DatabaseUrl
 

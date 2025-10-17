@@ -19,6 +19,12 @@ if [ -z "$OPENAI_API_KEY" ]; then
     exit 1
 fi
 
+if [ -z "$GEMINI_API_KEY" ]; then
+    echo "❌ Error: GEMINI_API_KEY environment variable is not set"
+    echo "   Create a .env file or set the environment variable"
+    exit 1
+fi
+
 if [ -z "$DATABASE_URL" ]; then
     echo "❌ Error: DATABASE_URL environment variable is not set"
     echo "   Create a .env file or set the environment variable"
@@ -34,6 +40,7 @@ aws cloudformation deploy \
   --stack-name $STACK_NAME \
   --parameter-overrides \
     OpenAIApiKey="$OPENAI_API_KEY" \
+    GeminiApiKey="$GEMINI_API_KEY" \
     DatabaseUrl="$DATABASE_URL" \
     ImageTag="latest" \
   --capabilities CAPABILITY_IAM \

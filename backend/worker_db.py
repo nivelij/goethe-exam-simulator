@@ -56,6 +56,11 @@ def get_next_pending_job():
                             "SELECT level FROM read_exam WHERE queue_id = %s",
                             (queue_id,)
                         )
+                    elif category == 'listen':
+                        cur.execute(
+                            "SELECT level FROM listen_exam WHERE queue_id = %s",
+                            (queue_id,)
+                        )
                     else:  # write_generation or write_evaluation
                         cur.execute(
                             "SELECT level FROM write_exam WHERE queue_id = %s",
@@ -120,6 +125,11 @@ def update_job_completed(queue_id, payload, job_id):
                     if category == 'read':
                         cur.execute(
                             "UPDATE read_exam SET payload = %s WHERE queue_id = %s",
+                            (payload_json, queue_id)
+                        )
+                    elif category == 'listen':
+                        cur.execute(
+                            "UPDATE listen_exam SET payload = %s WHERE queue_id = %s",
                             (payload_json, queue_id)
                         )
                     elif category == 'write_generation':

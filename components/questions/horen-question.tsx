@@ -1,19 +1,123 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, type ComponentProps } from "react"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Button } from "@/components/ui/button"
 import { Volume2 } from "lucide-react"
-import type { ListeningAnswerMap, ListeningQuestionItem, ListeningScenario, ListeningTeil } from "@/lib/exam-data"
+import type { ListeningQuestionItem, ListeningScenario, ListeningTeil } from "@/lib/exam-data"
 
 interface HörenQuestionProps {
   teil: ListeningTeil
-  answers: ListeningAnswerMap | undefined
-  onAnswer: (answers: ListeningAnswerMap) => void
+  scenario: ListeningScenario
+  question: ListeningQuestionItem
+  answer: number | undefined
+  onAnswerAction: (optionIndex: number) => void
+  questionNumber: number
+  totalQuestions: number
 }
 
-export function HörenQuestion({ teil, answers, onAnswer }: HörenQuestionProps) {
+export function HörenQuestion({
+  teil,
+  scenario,
+  question,
+  answer,
+  onAnswerAction,
+  questionNumber,
+  totalQuestions
+}: HörenQuestionProps) {
+  const beschreibung = scenario.szenarioBeschreibung
+
+  return (
+    <div className="space-y-8">
+      <div className="space-y-2">
+        <div className="text-xs font-semibold uppercase tracking-wide text-accent">Hörverstehen</div>
+        <h3 className="text-2xl font-bold text-card-foreground">Teil {teil.teilNummer}</h3>
+        <p className="text-sm text-muted-foreground">
+          Frage {questionNumber} von {totalQuestions}
+        </p>
+        <p className="mt-4 whitespace-pre-line text-base leading-relaxed text-muted-foreground">{teil.anweisung}</p>
+      </div>
+
+      {teil.encodedAudio && <EncodedAudioPlayer encodedAudio={teil.encodedAudio} />}
+
+      <section className="space-y-4 rounded-lg border border-border/50 bg-muted/40 p-5">
+        <div className="space-y-3">
+          <div className="text-sm font-semibold uppercase tracking-wide text-accent">
+            Szenario {scenario.szenarioNummer} ({scenario.wiedergabe})
+          </div>
+          {beschreibung && (
+            <div className="grid gap-3 md:grid-cols-2 text-sm text-muted-foreground">
+              {beschreibung.ort && (
+                <div>
+                  <span className="font-semibold text-foreground">Ort:</span> {beschreibung.ort}
+                </div>
+              )}
+              {beschreibung.hintergrundgeraeusche && (
+                <div>
+                  <span className="font-semibold text-foreground">Geräusche:</span> {beschreibung.hintergrundgeraeusche}
+                </div>
+              )}
+              {beschreibung.sprecher && beschreibung.sprecher.length > 0 && (
+                <div className="md:col-span-2">
+                  <div className="font-semibold text-foreground">Sprecher:</div>
+                  <ul className="ml-4 mt-1 list-disc space-y-1">
+                    {beschreibung.sprecher.map((sprecher) => (
+                      <li key={sprecher.sprecherID}>
+                        <span className="text-foreground">{sprecher.rolle}</span> ({sprecher.stimme})
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {scenario.encodedAudio && (
+          <EncodedAudioPlayer encodedAudio={scenario.encodedAudio} size="default" align="start" className="mt-2" />
+        )}
+      </section>
+
+      <section className="space-y-4 rounded-lg border border-border/60 bg-card p-6 shadow-sm">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Frage {question.frageNummer}
+          </div>
+          <h4 className="mt-2 text-lg font-semibold text-card-foreground">{question.text}</h4>
+        </div>
+
+        <RadioGroup
+          value={answer !== undefined ? answer.toString() : ""}
+          onValueChange={(value) => onAnswerAction(Number.parseInt(value))}
+        >
+          <div className="space-y-3">
+            {question.options.map((option, index) => (
+              <div
+                key={option.key}
+                className="flex items-center space-x-3 rounded-lg border-2 border-border p-4 transition-colors hover:border-accent"
+              >
+                <RadioGroupItem value={index.toString()} id={`frage-${question.globalIndex}-option-${index}`} />
+                <Label htmlFor={`frage-${question.globalIndex}-option-${index}`} className="flex-1 cursor-pointer text-base">
+                  {option.text}
+                </Label>
+              </div>
+            ))}
+          </div>
+        </RadioGroup>
+      </section>
+    </div>
+  )
+}
+
+interface EncodedAudioPlayerProps {
+  encodedAudio?: string
+  size?: ComponentProps<typeof Button>["size"]
+  align?: "start" | "center"
+  className?: string
+}
+
+function EncodedAudioPlayer({ encodedAudio, size = "lg", align = "center", className }: EncodedAudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const [audioSrc, setAudioSrc] = useState<string | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
@@ -25,14 +129,14 @@ export function HörenQuestion({ teil, answers, onAnswer }: HörenQuestionProps)
     setHasStarted(false)
     setIsPlaying(false)
 
-    if (!teil.encodedAudio) {
+    if (!encodedAudio) {
       setAudioSrc(null)
       return
     }
 
     let url: string | null = null
     try {
-      const binaryString = atob(teil.encodedAudio)
+      const binaryString = atob(encodedAudio)
       const len = binaryString.length
       const bytes = new Uint8Array(len)
       for (let i = 0; i < len; i++) {
@@ -53,7 +157,7 @@ export function HörenQuestion({ teil, answers, onAnswer }: HörenQuestionProps)
         URL.revokeObjectURL(url)
       }
     }
-  }, [teil.encodedAudio])
+  }, [encodedAudio])
 
   const handlePlay = async () => {
     if (!audioRef.current || !audioSrc) return
@@ -68,130 +172,39 @@ export function HörenQuestion({ teil, answers, onAnswer }: HörenQuestionProps)
     }
   }
 
-  const handleAnswerChange = (question: ListeningQuestionItem, optionIndex: number) => {
-    const updated: ListeningAnswerMap = {
-      ...(answers || {}),
-      [question.globalIndex]: optionIndex
-    }
-    onAnswer(updated)
+  if (!encodedAudio) {
+    return null
   }
 
-  const renderScenarioHeader = (szenario: ListeningScenario) => {
-    const beschreibung = szenario.szenarioBeschreibung
+  const baseContainerClass = align === "start" ? "flex flex-col items-start gap-3" : "flex flex-col items-center gap-4"
+  const containerClass = className ? `${baseContainerClass} ${className}` : baseContainerClass
+  const errorClass = className
+    ? `rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive ${className}`
+    : "rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive"
 
-    if (!beschreibung) return null
-
-    return (
-      <div className="rounded-lg border border-border/50 bg-muted/40 p-4 text-sm text-muted-foreground">
-        <div className="grid gap-2 md:grid-cols-2">
-          {beschreibung.ort && (
-            <div>
-              <span className="font-semibold text-foreground">Ort:</span> {beschreibung.ort}
-            </div>
-          )}
-          {beschreibung.hintergrundgeraeusche && (
-            <div>
-              <span className="font-semibold text-foreground">Geräusche:</span> {beschreibung.hintergrundgeraeusche}
-            </div>
-          )}
-        </div>
-        {beschreibung.sprecher && beschreibung.sprecher.length > 0 && (
-          <div className="mt-3 space-y-1">
-            <div className="font-semibold text-foreground">Sprecher:</div>
-            <ul className="ml-4 list-disc space-y-1">
-              {beschreibung.sprecher.map((sprecher) => (
-                <li key={sprecher.sprecherID}>
-                  <span className="text-foreground">{sprecher.rolle}</span> ({sprecher.stimme})
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </div>
-    )
+  if (audioError) {
+    return <div className={errorClass}>{audioError}</div>
   }
 
   return (
-    <div className="space-y-8">
-      <div>
-        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-accent">Hörverstehen</div>
-        <h3 className="text-2xl font-bold text-card-foreground">Teil {teil.teilNummer}</h3>
-        <p className="mt-4 whitespace-pre-line text-base leading-relaxed text-muted-foreground">{teil.anweisung}</p>
-      </div>
-
-      {audioError ? (
-        <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
-          {audioError}
-        </div>
-      ) : (
-        <div className="flex flex-col items-center gap-4">
-          <Button onClick={handlePlay} size="lg" className="gap-2" disabled={!audioSrc || isPlaying}>
-            <Volume2 className="h-5 w-5" />
-            {hasStarted ? (isPlaying ? "Wiedergabe läuft" : "Erneut abspielen") : "Audio abspielen"}
-          </Button>
-          <audio
-            ref={audioRef}
-            src={audioSrc ?? undefined}
-            onPlaying={() => setIsPlaying(true)}
-            onEnded={() => {
-              setIsPlaying(false)
-              if (audioRef.current) {
-                audioRef.current.currentTime = 0
-              }
-            }}
-            preload="auto"
-          />
-        </div>
-      )}
-
-      <div className="space-y-10">
-        {teil.audioSzenarien.map((szenario) => (
-          <div key={`${teil.teilNummer}-${szenario.szenarioNummer}`} className="space-y-6">
-            <div className="space-y-3">
-              <div className="text-sm font-semibold uppercase tracking-wide text-accent">
-                Szenario {szenario.szenarioNummer} ({szenario.wiedergabe})
-              </div>
-              {renderScenarioHeader(szenario)}
-            </div>
-
-            <div className="space-y-6">
-              {szenario.fragen.map((frage) => (
-                <div key={frage.globalIndex} className="space-y-3 rounded-lg border border-border/60 bg-card p-5 shadow-sm">
-                  <div>
-                    <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      Frage {frage.frageNummer}
-                    </div>
-                    <h4 className="mt-1 text-lg font-semibold text-card-foreground">{frage.text}</h4>
-                  </div>
-
-                  <RadioGroup
-                    value={
-                      answers && answers[frage.globalIndex] !== undefined
-                        ? answers[frage.globalIndex].toString()
-                        : ""
-                    }
-                    onValueChange={(value) => handleAnswerChange(frage, Number.parseInt(value))}
-                  >
-                    <div className="space-y-3">
-                      {frage.options.map((option, index) => (
-                        <div
-                          key={option.key}
-                          className="flex items-center space-x-3 rounded-lg border-2 border-border p-4 transition-colors hover:border-accent"
-                        >
-                          <RadioGroupItem value={index.toString()} id={`frage-${frage.globalIndex}-option-${index}`} />
-                          <Label htmlFor={`frage-${frage.globalIndex}-option-${index}`} className="flex-1 cursor-pointer text-base">
-                            {option.text}
-                          </Label>
-                        </div>
-                      ))}
-                    </div>
-                  </RadioGroup>
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
+    <div className={containerClass}>
+      <Button onClick={handlePlay} size={size} className="gap-2" disabled={!audioSrc || isPlaying}>
+        <Volume2 className="h-5 w-5" />
+        {hasStarted ? (isPlaying ? "Wiedergabe läuft" : "Erneut abspielen") : "Audio abspielen"}
+      </Button>
+      <audio
+        ref={audioRef}
+        src={audioSrc ?? undefined}
+        onPlaying={() => setIsPlaying(true)}
+        onEnded={() => {
+          setIsPlaying(false)
+          if (audioRef.current) {
+            audioRef.current.currentTime = 0
+          }
+        }}
+        onPause={() => setIsPlaying(false)}
+        preload="auto"
+      />
     </div>
   )
 }

@@ -2,6 +2,7 @@ import os
 import psycopg2
 import logging
 import json
+import uuid
 from contextlib import contextmanager
 
 logger = logging.getLogger(__name__)
@@ -26,7 +27,7 @@ def get_db_connection():
         if conn:
             conn.close()
 
-def insert_read_exam(queue_id, level):
+def _insert_read_exam(queue_id, level):
     """
     Insert a new record into the read_exam table
     """
@@ -84,7 +85,7 @@ def get_job_result(queue_id):
         logger.error(f"Failed to get job result: {e}")
         raise
 
-def insert_exam_job(queue_id, category):
+def _insert_exam_job(queue_id, category):
     """
     Insert a new record into the exam_jobs table
 
@@ -139,7 +140,7 @@ def update_participant_results(queue_id, participant_answers, score, is_pass):
         logger.error(f"Failed to update participant results: {e}")
         raise
 
-def insert_write_exam(queue_id, level):
+def _insert_write_exam(queue_id, level):
     """
     Insert a new record into the write_exam table
     """
@@ -286,3 +287,92 @@ def get_write_exam_data(queue_id, modus):
     except Exception as e:
         logger.error(f"Failed to get write exam data: {e}")
         raise
+
+def _insert_listen_exam(queue_id, level):
+    """
+    Insert a new record into the listen_exam table
+    """
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO listen_exam(queue_id, level) VALUES (%s, %s)",
+                    (queue_id, level)
+                )
+                conn.commit()
+                logger.info(f"Successfully inserted listen_exam record: queue_id={queue_id}, level={level}")
+    except Exception as e:
+        logger.error(f"Failed to insert listen_exam record: {e}")
+        raise
+
+def get_listen_job_result(queue_id):
+    """
+    Retrieve listen job result by queue_id from listen_exam table
+    Returns: dict with payload, or None if not found
+    """
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT payload FROM listen_exam WHERE queue_id = %s AND payload IS NOT NULL",
+                    (queue_id,)
+                )
+                result = cur.fetchone()
+
+                if result:
+                    payload = result[0]
+
+                    # Parse JSON payload if it exists and is a string
+                    parsed_payload = None
+                    if payload:
+                        try:
+                            # Check if payload is already a dict or if it's a JSON string
+                            if isinstance(payload, str):
+                                parsed_payload = json.loads(payload)
+                            else:
+                                parsed_payload = payload  # Already parsed
+                        except json.JSONDecodeError as e:
+                            logger.error(f"Failed to parse payload JSON: {e}")
+                            parsed_payload = payload  # Return raw payload if JSON parsing fails
+
+                    return {
+                        'payload': parsed_payload
+                    }
+                else:
+                    logger.info(f"No listen job found for queue_id: {queue_id}")
+                    return None
+
+    except Exception as e:
+        logger.error(f"Failed to get listen job result: {e}")
+        raise
+
+def create_exam_job(exam_type, level, queue_id=None):
+    """
+    Common logic for creating exam jobs
+
+    Args:
+        exam_type (str): Type of exam ('read', 'write_generation', 'write_evaluation', 'listen')
+        level (str): CEFR level (required for generation jobs, None for evaluation jobs)
+        queue_id (str, optional): Existing queue ID for evaluation jobs
+
+    Returns:
+        str: queue_id
+    """
+    if queue_id is None:
+        queue_id = str(uuid.uuid4())
+
+    if exam_type == 'read':
+        _insert_read_exam(queue_id, level)
+        _insert_exam_job(queue_id, 'read')
+    elif exam_type == 'write_generation':
+        _insert_write_exam(queue_id, level)
+        _insert_exam_job(queue_id, 'write_generation')
+    elif exam_type == 'write_evaluation':
+        _insert_exam_job(queue_id, 'write_evaluation')
+    elif exam_type == 'listen':
+        _insert_listen_exam(queue_id, level)
+        _insert_exam_job(queue_id, 'listen')
+    else:
+        raise ValueError(f"Invalid exam type: {exam_type}")
+
+    return queue_id

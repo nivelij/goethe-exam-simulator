@@ -4,7 +4,7 @@ import logging
 import traceback
 import uuid
 import boto3
-from db import insert_read_exam, insert_exam_job, insert_write_exam, get_write_job_result, update_write_participant_answers, get_write_exam_data
+from db import get_job_result, get_write_exam_data, update_participant_results, update_write_participant_answers, create_exam_job
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -35,8 +35,6 @@ def build_response(status_code, body, additional_headers=None):
         'body': json.dumps(body) if body else ''
     }
 
-
-
 def get_default_subnets():
     """
     Get default VPC subnets for ECS tasks
@@ -61,9 +59,6 @@ def get_default_subnets():
     except Exception as e:
         logger.error(f"Error getting default subnets: {e}")
         raise
-
-
-
 
 def start_fargate_task():
     """
@@ -106,7 +101,6 @@ def handle_get_read(query_params):
     if not queue_id:
         return build_response(400, {'error': 'Missing required parameter: queue_id'})
 
-    from db import get_job_result
     result = get_job_result(queue_id)
 
     if result is None:
@@ -127,11 +121,8 @@ def handle_put_read(query_params):
             'error': f'Invalid level. Must be one of: A1, A2, B1, B2, C1, C2'
         })
 
-    queue_id = str(uuid.uuid4())
-    insert_read_exam(queue_id, level)
-    insert_exam_job(queue_id, 'read')
-
-    task_arn = start_fargate_task()
+    queue_id = create_exam_job('read', level)
+    start_fargate_task()
 
     return build_response(200, {
         'message': 'Read generation job started',
@@ -171,8 +162,6 @@ def handle_patch_read(query_params, body):
     if not isinstance(is_pass, bool):
         return build_response(400, {'error': 'is_pass must be a boolean'})
 
-    # Update participant results
-    from db import update_participant_results
     success = update_participant_results(queue_id, participant_answers, score, is_pass)
 
     if not success:
@@ -239,11 +228,8 @@ def handle_write_generation(level):
             'error': f'Invalid level. Must be one of: A1, A2, B1, B2, C1, C2'
         })
 
-    queue_id = str(uuid.uuid4())
-    insert_write_exam(queue_id, level)
-    insert_exam_job(queue_id, 'write_generation')
-
-    task_arn = start_fargate_task()
+    queue_id = create_exam_job('write_generation', level)
+    start_fargate_task()
 
     return build_response(200, {
         'message': 'Write generation job started',
@@ -263,19 +249,37 @@ def handle_write_evaluation(queue_id, body):
     if not participant_answers:
         return build_response(400, {'error': 'Missing required field: participant_answers'})
 
-    # Update write exam with participant answers
     success = update_write_participant_answers(queue_id, participant_answers)
 
     if not success:
         return build_response(404, {'error': 'Queue ID not found'})
 
-    # Create evaluation job
-    insert_exam_job(queue_id, 'write_evaluation')
-
-    task_arn = start_fargate_task()
+    create_exam_job('write_evaluation', None, queue_id)
+    start_fargate_task()
 
     return build_response(200, {
         'message': 'Write evaluation job started',
+        'queue_id': queue_id,
+    })
+
+def handle_put_listen(query_params):
+    """
+    Handle PUT /listen endpoint - create listening exam job and start ECS task
+    """
+    level = query_params.get('level')
+    if not level:
+        return build_response(400, {'error': 'Missing required parameter: level'})
+
+    if not validate_level(level):
+        return build_response(400, {
+            'error': f'Invalid level. Must be one of: A1, A2, B1, B2, C1, C2'
+        })
+
+    queue_id = create_exam_job('listen', level)
+    start_fargate_task()
+
+    return build_response(200, {
+        'message': 'Listen generation job started',
         'queue_id': queue_id,
     })
 
@@ -310,6 +314,8 @@ def lambda_handler(event, context):
                 return handle_get_write(query_params)
             elif http_method == 'PUT' and path == '/write':
                 return handle_put_write(query_params, body)
+            elif http_method == 'PUT' and path == '/listen':
+                return handle_put_listen(query_params)
             else:
                 return build_response(404, {
                     'error': f'Endpoint not found: {http_method} {path}'

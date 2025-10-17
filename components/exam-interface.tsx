@@ -6,7 +6,7 @@ import { Card } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { ArrowLeft, Clock, CheckCircle2, AlertTriangle, Play, Loader2 } from "lucide-react"
 import type { CEFRLevel, ExamModule } from "@/app/page"
-import { getExamQuestions, examConfigs, getWritingEvaluationSample, fetchWritingEvaluationFromAPI, type Question, type ExamData, type WritingEvaluation, type ListeningTeil, type ListeningFlatQuestion, type ListeningAnswerMap } from "@/lib/exam-data"
+import { getExamQuestions, examConfigs, getWritingEvaluationSample, fetchWritingEvaluationFromAPI, type Question, type WritingEvaluation, type ListeningTeil, type ListeningFlatQuestion, type ListeningAnswerMap } from "@/lib/exam-data"
 import { LesenQuestion } from "@/components/questions/lesen-question"
 import { HörenQuestion } from "@/components/questions/horen-question"
 import { SchreibenQuestion } from "@/components/questions/schreiben-question"
@@ -205,11 +205,10 @@ export function ExamInterface({ level, module, onComplete, onBack }: ExamInterfa
         setIsEvaluating(false)
       }
     } else if (module === "Hören") {
-      listeningAnswerAggregate = Object.values(answers).reduce<ListeningAnswerMap>((acc, value) => {
-        if (value && typeof value === "object") {
-          Object.entries(value as ListeningAnswerMap).forEach(([key, val]) => {
-            acc[Number(key)] = val
-          })
+      listeningAnswerAggregate = listeningQuestions.reduce<ListeningAnswerMap>((acc, question, index) => {
+        const value = answers[index]
+        if (typeof value === "number" && !Number.isNaN(value)) {
+          acc[question.globalIndex] = value
         }
         return acc
       }, {})
@@ -297,13 +296,22 @@ export function ExamInterface({ level, module, onComplete, onBack }: ExamInterfa
   }
 
   const currentQuestion = questions[currentQuestionIndex]
-  const currentListeningTeil = module === "Hören" ? listeningParts[currentQuestionIndex] : undefined
-  const totalQuestionsDisplay = module === "Hören" ? listeningQuestions.length : questions.length
+  const currentListeningQuestion = module === "Hören" ? listeningQuestions[currentQuestionIndex] : undefined
+  const currentListeningTeil = currentListeningQuestion
+    ? listeningParts.find((teil) => teil.teilNummer === currentListeningQuestion.teilNummer)
+    : undefined
+  const currentListeningScenario = currentListeningTeil?.audioSzenarien.find(
+    (scenario) => scenario.szenarioNummer === currentListeningQuestion?.szenarioNummer
+  )
+  const currentListeningQuestionItem = currentListeningScenario?.fragen.find(
+    (frage) => frage.globalIndex === currentListeningQuestion?.globalIndex
+  )
+  const totalQuestionsDisplay = questions.length
   const progress = questions.length > 0 ? ((currentQuestionIndex + 1) / questions.length) * 100 : 0
   const isIndexAnswered = (index: number) => {
     const value = answers[index]
     if (module === "Hören") {
-      return value && typeof value === "object" && Object.keys(value).length > 0
+      return typeof value === "number" && !Number.isNaN(value)
     }
     return value !== undefined && value !== null && value !== ""
   }
@@ -510,11 +518,19 @@ export function ExamInterface({ level, module, onComplete, onBack }: ExamInterfa
                     onAnswer={handleAnswer}
                   />
                 )}
-                {module === "Hören" && currentListeningTeil && (
+                {module === "Hören" && currentListeningTeil && currentListeningScenario && currentListeningQuestionItem && (
                   <HörenQuestion
                     teil={currentListeningTeil}
-                    answers={answers[currentQuestionIndex] as ListeningAnswerMap | undefined}
-                    onAnswer={handleAnswer}
+                    scenario={currentListeningScenario}
+                    question={currentListeningQuestionItem}
+                    answer={
+                      typeof answers[currentQuestionIndex] === "number"
+                        ? (answers[currentQuestionIndex] as number)
+                        : undefined
+                    }
+                    onAnswerAction={(selected) => handleAnswer(selected)}
+                    questionNumber={currentQuestionIndex + 1}
+                    totalQuestions={questions.length}
                   />
                 )}
                 {module === "Schreiben" && (

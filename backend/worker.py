@@ -3,7 +3,14 @@ import time
 import json
 import logging
 import traceback
+import random
+import base64
 from openai import OpenAI
+from google import genai
+from google.genai import types
+from io import BytesIO
+from pydub import AudioSegment
+from pydub.utils import which
 from worker_db import get_next_pending_job, update_job_completed, update_job_failed, get_write_exam_for_evaluation, update_write_exam_score
 
 # Configure logging
@@ -16,6 +23,14 @@ client = OpenAI(api_key=os.environ.get('OPENAI_API_KEY'))
 # OpenAI Assistant IDs
 READING_ASSISTANT_ID = "asst_CPMp0f2sognx0GZpqKe1dEF5"
 WRITING_ASSISTANT_ID = "asst_w1oN6tiVxBkLVZWimbqmwjm3"
+
+# FFmpeg / FFprobe setup for audio processing
+AudioSegment.converter = which("ffmpeg")
+AudioSegment.ffprobe = which("ffprobe")
+
+# Voice mappings by gender for TTS
+MALE_VOICES = ["alloy", "ash", "ballad", "cedar", "echo", "fable", "onyx", "verse"]
+FEMALE_VOICES = ["coral", "marin", "nova", "sage", "shimmer"]
 
 def generate_exam_reading(level):
     """
@@ -452,6 +467,183 @@ def evaluate_exam_writing(queue_id):
         logger.error(f"Exception in evaluate_exam_writing: {str(e)}")
         raise Exception(f"Error evaluating writing exam: {str(e)}")
 
+def assign_voice_by_gender(gender):
+    """Assign random voice based on gender"""
+    if gender.lower() == "male":
+        return random.choice(MALE_VOICES)
+    elif gender.lower() == "female":
+        return random.choice(FEMALE_VOICES)
+    else:
+        return random.choice(MALE_VOICES)  # default fallback
+
+def audio_to_base64(audio_segment):
+    """Convert AudioSegment to base64 string"""
+    buffer = BytesIO()
+    audio_segment.export(buffer, format="mp3")
+    audio_data = buffer.getvalue()
+    return base64.b64encode(audio_data).decode('utf-8')
+
+def generate_exam_listening(level):
+    """
+    Generate listening exam content using Google Gemini API and convert to audio with TTS
+
+    Args:
+        level (str): CEFR level (A1, A2, B1, B2, C1, C2)
+
+    Returns:
+        dict: Generated exam content as JSON object with embedded base64 audio
+    """
+    logger.info(f"Starting listening exam generation for level: {level}")
+
+    try:
+        # Check if Gemini API key is available
+        gemini_api_key = os.environ.get('GEMINI_API_KEY')
+        if not gemini_api_key:
+            raise Exception("GEMINI_API_KEY environment variable is not set")
+
+        logger.info("Gemini API key found, initializing client")
+
+        # Initialize Gemini client
+        gemini_client = genai.Client(api_key=gemini_api_key)
+
+        # Read system instruction from file
+        system_instruction_path = os.path.join(os.path.dirname(__file__), 'listening_system_prompt.txt')
+        logger.info(f"Reading system instruction from: {system_instruction_path}")
+
+        with open(system_instruction_path, 'r', encoding='utf-8') as f:
+            system_instruction_text = f.read()
+
+        # Create payload
+        payload = {
+            "modus": "GENERATE",
+            "level": level
+        }
+        prompt_content = json.dumps(payload)
+        logger.info(f"Creating request with prompt: {prompt_content}")
+
+        # Prepare contents for Gemini
+        contents = [
+            types.Content(
+                role="user",
+                parts=[
+                    types.Part.from_text(text=prompt_content),
+                ],
+            ),
+        ]
+
+        # Configure generation
+        generate_content_config = types.GenerateContentConfig(
+            thinking_config=types.ThinkingConfig(
+                thinking_budget=16584,
+            ),
+            response_mime_type="application/json",
+            system_instruction=[
+                types.Part.from_text(text=system_instruction_text),
+            ],
+        )
+
+        logger.info("Sending request to Gemini API...")
+
+        # Generate content (collect all chunks into complete response)
+        model = "gemini-2.5-flash"
+        full_response = ""
+
+        for chunk in gemini_client.models.generate_content_stream(
+            model=model,
+            contents=contents,
+            config=generate_content_config,
+        ):
+            if chunk.text:
+                full_response += chunk.text
+
+        # Parse JSON response from Gemini
+        logger.info("Attempting to parse JSON response")
+        try:
+            json_content = json.loads(full_response)
+            logger.info("Successfully parsed JSON response")
+
+            # Now process the JSON to add TTS audio
+            logger.info("Starting TTS audio generation for listening exam")
+            data = json_content
+
+            if 'teile' in data:
+                for teil in data['teile']:
+                    teil_nummer = teil.get('teilNummer', 'unknown')
+                    logger.info(f"Processing Teil {teil_nummer}...")
+
+                    if 'audioSzenarien' in teil:
+                        for scenario in teil['audioSzenarien']:
+                            szenario_nummer = scenario.get('szenarioNummer', 'unknown')
+                            logger.info(f"  Processing Scenario {szenario_nummer}...")
+
+                            # Get speaker info for voice assignment
+                            sprecher_info = scenario.get('szenarioBeschreibung', {}).get('sprecher', [])
+                            voice_mapping = {}
+
+                            # Assign voices to each speaker based on gender
+                            for sprecher in sprecher_info:
+                                speaker_id = sprecher.get('sprecherID')
+                                gender = sprecher.get('gender', 'male')
+                                voice_mapping[speaker_id] = assign_voice_by_gender(gender)
+                                logger.info(f"    Assigned voice: {speaker_id} ({gender}) -> {voice_mapping[speaker_id]}")
+
+                            # Generate conversation audio
+                            conversation = AudioSegment.silent(duration=0)
+                            transkript = scenario.get('transkript', [])
+
+                            for i, transcript_line in enumerate(transkript):
+                                speaker_id = transcript_line.get('sprecherID')
+                                text = transcript_line.get('text', '')
+                                voice = voice_mapping.get(speaker_id, 'alloy')
+
+                                logger.info(f"    Generating TTS for {speaker_id}: {text[:50]}...")
+
+                                try:
+                                    response = client.audio.speech.create(
+                                        model="gpt-4o-mini-tts",
+                                        voice=voice,
+                                        input=text,
+                                    )
+
+                                    audio_bytes = BytesIO(response.read())
+                                    segment = AudioSegment.from_file(audio_bytes, format="mp3")
+
+                                    # Add slight panning for stereo effect
+                                    pan_value = -0.3 if i % 2 == 0 else 0.3
+                                    segment = segment.pan(pan_value)
+
+                                    conversation += segment
+
+                                    # Add pause between speakers (except for last line)
+                                    if i < len(transkript) - 1:
+                                        pause_duration = random.randint(700, 1600)
+                                        conversation += AudioSegment.silent(duration=pause_duration)
+
+                                except Exception as e:
+                                    logger.error(f"Error generating TTS for line: {str(e)}")
+                                    raise
+
+                            # Convert to base64 and add to scenario object
+                            base64_audio = audio_to_base64(conversation)
+                            scenario['encodedAudio'] = base64_audio
+                            logger.info(f"    Base64 encoding completed ({len(base64_audio)} characters)")
+
+            logger.info("TTS audio generation completed successfully")
+            return data
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse Gemini response as JSON: {str(e)}")
+            logger.error(f"Raw response: {full_response[:1000]}...")
+            return {
+                "error": "Gemini response is not valid JSON",
+                "raw_response": full_response
+            }
+
+    except Exception as e:
+        logger.error(f"Exception in generate_exam_listening: {str(e)}")
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        raise Exception(f"Error generating listening exam content: {str(e)}")
+
 def process_single_job():
     """
     Process a single job from the database queue
@@ -493,6 +685,8 @@ def process_single_job():
                         logger.warning(f"No geschätztePunktzahl found in evaluation result for queue_id={queue_id}")
                 else:
                     logger.warning(f"Invalid evaluation result format for queue_id={queue_id}")
+            elif category == 'listen':
+                result = generate_exam_listening(level)
             else:
                 error_message = f"Unsupported category: {category}"
                 logger.error(error_message)
