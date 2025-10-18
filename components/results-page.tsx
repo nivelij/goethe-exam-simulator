@@ -168,10 +168,6 @@ export function ResultsPage({ level, module, score, totalQuestions, onRestart, o
                   <span className="font-semibold">{moduleConfig.duration} minutes</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Tasks Completed:</span>
-                  <span className="font-semibold">{moduleConfig.tasks} tasks</span>
-                </div>
-                <div className="flex justify-between">
                   <span className="text-muted-foreground">Performance Level:</span>
                   <span className={`font-semibold ${
                     percentage >= 90 ? "text-green-600" :

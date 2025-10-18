@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application files
 COPY worker.py .
 COPY worker_db.py .
-COPY listening_system_prompt.txt .
+COPY prompts/ ./prompts/
 
 # Environment variables will be set at runtime via ECS task definition
 # DO NOT HARDCODE SECRETS HERE
