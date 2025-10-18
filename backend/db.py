@@ -106,7 +106,7 @@ def _insert_exam_job(queue_id, category):
         logger.error(f"Failed to insert exam_job record: {e}")
         raise
 
-def update_participant_results(queue_id, participant_answers, score, is_pass):
+def update_read_participant_results(queue_id, participant_answers, score, is_pass):
     """
     Update participant results in the read_exam table
 
@@ -346,6 +346,40 @@ def get_listen_job_result(queue_id):
         logger.error(f"Failed to get listen job result: {e}")
         raise
 
+def update_listen_participant_results(queue_id, participant_answers, score, is_pass):
+    """
+    Update participant results in the listen_exam table
+
+    Args:
+        queue_id (str): The queue ID
+        participant_answers (list): Array of participant answers
+        score (int/float): The participant's score
+        is_pass (bool): Whether the participant passed
+    """
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                # Convert participant_answers to JSON string if it's not already
+                answers_json = json.dumps(participant_answers) if isinstance(participant_answers, (list, dict)) else participant_answers
+
+                cur.execute("""
+                    UPDATE listen_exam
+                    SET participant_answers = %s, score = %s, is_pass = %s
+                    WHERE queue_id = %s
+                """, (answers_json, score, is_pass, queue_id))
+
+                if cur.rowcount == 0:
+                    logger.warning(f"No record found to update for queue_id: {queue_id}")
+                    return False
+
+                conn.commit()
+                logger.info(f"Successfully updated listen participant results for queue_id={queue_id}, score={score}, is_pass={is_pass}")
+                return True
+
+    except Exception as e:
+        logger.error(f"Failed to update listen participant results: {e}")
+        raise
+
 def create_exam_job(exam_type, level, queue_id=None):
     """
     Common logic for creating exam jobs
@@ -376,3 +410,41 @@ def create_exam_job(exam_type, level, queue_id=None):
         raise ValueError(f"Invalid exam type: {exam_type}")
 
     return queue_id
+
+def get_all_exam_jobs():
+    """
+    Retrieve all exam jobs ordered by creation date (newest first)
+
+    Returns:
+        list: List of dictionaries containing job information
+    """
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT
+                        queue_id,
+                        category,
+                        status,
+                        to_char(created_at, 'DD.MM.YYYY HH24:MI') as date
+                    FROM exam_jobs
+                    ORDER BY created_at DESC
+                """)
+
+                rows = cur.fetchall()
+
+                jobs = []
+                for row in rows:
+                    jobs.append({
+                        'queue_id': row[0],
+                        'category': row[1],
+                        'status': row[2],
+                        'date': row[3]
+                    })
+
+                logger.info(f"Retrieved {len(jobs)} exam jobs")
+                return jobs
+
+    except Exception as e:
+        logger.error(f"Failed to get all exam jobs: {e}")
+        raise

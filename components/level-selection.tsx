@@ -2,9 +2,10 @@
 
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { BookOpen, Headphones, PenTool, MessageCircle, GraduationCap, Clock } from "lucide-react"
+import { BookOpen, Headphones, PenTool, MessageCircle, GraduationCap, Clock, ListChecks } from "lucide-react"
 import type { CEFRLevel } from "@/app/page"
 import { examConfigs } from "@/lib/exam-data"
+import Link from "next/link"
 
 interface LevelSelectionProps {
   onLevelSelect: (level: CEFRLevel) => void
@@ -34,14 +35,22 @@ export function LevelSelection({ onLevelSelect }: LevelSelectionProps) {
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card">
         <div className="container mx-auto px-4 py-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary">
-              <GraduationCap className="h-6 w-6 text-primary-foreground" />
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary">
+                <GraduationCap className="h-6 w-6 text-primary-foreground" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-foreground">Goethe-Zertifikat</h1>
+                <p className="text-sm text-muted-foreground">Exam Simulator</p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-2xl font-bold text-foreground">Goethe-Zertifikat</h1>
-              <p className="text-sm text-muted-foreground">Exam Simulator</p>
-            </div>
+            <Link href="/jobs">
+              <Button variant="outline" size="sm" className="gap-2">
+                <ListChecks className="h-4 w-4" />
+                View Jobs
+              </Button>
+            </Link>
           </div>
         </div>
       </header>

@@ -343,6 +343,7 @@ export async function getExamQuestions(level: CEFRLevel, module: ExamModule): Pr
 // Cache to prevent duplicate requests
 const requestCache = new Map<string, Promise<{ data: ReadingExamData; queueId: string }>>()
 const writingRequestCache = new Map<string, Promise<{ data: any; queueId: string }>>()
+const listeningRequestCache = new Map<string, Promise<{ data: ListeningExamRaw; queueId: string }>>()
 
 async function fetchReadingExamFromAPI(level: CEFRLevel): Promise<{ data: ReadingExamData; queueId: string }> {
   const cacheKey = `reading-${level}`
@@ -506,6 +507,89 @@ async function fetchWritingExamFromAPI(level: CEFRLevel): Promise<{ data: any; q
   // Cache the promise
   const promise = requestPromise()
   writingRequestCache.set(cacheKey, promise)
+
+  return promise
+}
+
+async function fetchListeningExamFromAPI(level: CEFRLevel): Promise<{ data: ListeningExamRaw; queueId: string }> {
+  const cacheKey = `listening-${level}`
+
+  // Return existing promise if request is already in progress
+  if (listeningRequestCache.has(cacheKey)) {
+    return listeningRequestCache.get(cacheKey)!
+  }
+
+  // Create new request promise
+  const requestPromise = async (): Promise<{ data: ListeningExamRaw; queueId: string }> => {
+    try {
+      console.log(`Initiating new listening exam generation for level ${level}`)
+
+      // Step 1: Make PUT request to initiate exam generation
+      const putResponse = await fetch(`https://usncnfhlvb.execute-api.eu-central-1.amazonaws.com/live/listen?level=${level}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      })
+
+      if (!putResponse.ok) {
+        throw new Error(`Failed to initiate listening exam generation: ${putResponse.statusText}`)
+      }
+
+      const putData = await putResponse.json()
+      const queueId = putData.queue_id
+
+      if (!queueId) {
+        throw new Error('No queue_id received from listening API')
+      }
+
+      console.log(`Received listening queue_id: ${queueId}, waiting 10 seconds...`)
+
+      // Step 2: Wait 10 seconds
+      await new Promise(resolve => setTimeout(resolve, 10000))
+
+      // Step 3: Poll for results - listening takes longer due to TTS generation
+      let attempts = 0
+      const maxAttempts = 180 // 15 minutes max (180 * 5 seconds) - more generous timeout
+
+      console.log('Starting to poll for listening exam results... This may take several minutes due to audio generation.')
+
+      while (attempts < maxAttempts) {
+        const getResponse = await fetch(`https://usncnfhlvb.execute-api.eu-central-1.amazonaws.com/live/listen?queue_id=${queueId}`)
+
+        if (getResponse.status === 404) {
+          // 404 means exam is not ready yet, continue polling
+          console.log(`Polling attempt ${attempts + 1}/${maxAttempts}: Listening exam not ready (404), waiting 5 seconds...`)
+        } else if (!getResponse.ok) {
+          // Other HTTP errors are actual failures
+          throw new Error(`Failed to fetch listening exam data: ${getResponse.status} ${getResponse.statusText}`)
+        } else {
+          // 200 response, check for payload
+          const getData = await getResponse.json()
+
+          if (getData.payload) {
+            console.log(`Listening exam generation completed after ${attempts + 1} polling attempts`)
+            return { data: getData.payload, queueId }
+          } else {
+            console.log(`Polling attempt ${attempts + 1}/${maxAttempts}: No listening payload yet, waiting 5 seconds...`)
+          }
+        }
+
+        // Wait 5 seconds before next attempt
+        await new Promise(resolve => setTimeout(resolve, 5000))
+        attempts++
+      }
+
+      throw new Error('Timeout: Listening exam generation took too long (15 minutes)')
+    } finally {
+      // Remove from cache when request completes (success or failure)
+      listeningRequestCache.delete(cacheKey)
+    }
+  }
+
+  // Cache the promise
+  const promise = requestPromise()
+  listeningRequestCache.set(cacheKey, promise)
 
   return promise
 }
@@ -869,41 +953,78 @@ async function getLesenQuestions(level: CEFRLevel): Promise<ExamData> {
   }
 }
 
-function getListeningQuestions(level: CEFRLevel): ExamData {
-  const rawData = listeningExamSample as ListeningExamRaw
-  const normalized = convertListeningData(rawData)
+async function getListeningQuestions(level: CEFRLevel): Promise<ExamData> {
+  try {
+    // Fetch exam data from API
+    const { data: listeningData, queueId } = await fetchListeningExamFromAPI(level)
+    const normalized = convertListeningData(listeningData)
 
-  if (normalized.level !== level) {
-    console.warn(`Listening sample level (${normalized.level}) does not match requested level (${level}). Using sample data as fallback.`)
-  }
+    const navigationQuestions: Question[] = normalized.flatQuestions.map((flatQuestion, index) => {
+      const teil = normalized.teile.find((item) => item.teilNummer === flatQuestion.teilNummer)
+      const scenario = teil?.audioSzenarien.find((item) => item.szenarioNummer === flatQuestion.szenarioNummer)
 
-  const navigationQuestions: Question[] = normalized.flatQuestions.map((flatQuestion, index) => {
-    const teil = normalized.teile.find((item) => item.teilNummer === flatQuestion.teilNummer)
-    const scenario = teil?.audioSzenarien.find((item) => item.szenarioNummer === flatQuestion.szenarioNummer)
+      const contextSections: string[] = []
+      if (teil?.anweisung) {
+        contextSections.push(teil.anweisung)
+      }
+      if (scenario?.szenarioBeschreibung?.ort) {
+        contextSections.push(`Ort: ${scenario.szenarioBeschreibung.ort}`)
+      }
+      if (scenario?.szenarioBeschreibung?.hintergrundgeraeusche) {
+        contextSections.push(`Geräusche: ${scenario.szenarioBeschreibung.hintergrundgeraeusche}`)
+      }
 
-    const contextSections: string[] = []
-    if (teil?.anweisung) {
-      contextSections.push(teil.anweisung)
-    }
-    if (scenario?.szenarioBeschreibung?.ort) {
-      contextSections.push(`Ort: ${scenario.szenarioBeschreibung.ort}`)
-    }
-    if (scenario?.szenarioBeschreibung?.hintergrundgeraeusche) {
-      contextSections.push(`Geräusche: ${scenario.szenarioBeschreibung.hintergrundgeraeusche}`)
-    }
+      return {
+        id: flatQuestion.globalIndex + 1,
+        type: "audio",
+        question: `Frage ${index + 1}`,
+        context: contextSections.join("\n\n")
+      }
+    })
 
     return {
-      id: flatQuestion.globalIndex + 1,
-      type: "audio",
-      question: `Frage ${index + 1}`,
-      context: contextSections.join("\n\n")
+      questions: navigationQuestions,
+      listeningParts: normalized.teile,
+      listeningQuestions: normalized.flatQuestions,
+      queueId
     }
-  })
+  } catch (error) {
+    console.error('Failed to fetch listening exam from API:', error)
 
-  return {
-    questions: navigationQuestions,
-    listeningParts: normalized.teile,
-    listeningQuestions: normalized.flatQuestions
+    // Fallback to sample data
+    const rawData = listeningExamSample as ListeningExamRaw
+    const normalized = convertListeningData(rawData)
+
+    console.warn(`Using fallback listening sample data for level ${level}. Sample level is ${normalized.level}.`)
+
+    const navigationQuestions: Question[] = normalized.flatQuestions.map((flatQuestion, index) => {
+      const teil = normalized.teile.find((item) => item.teilNummer === flatQuestion.teilNummer)
+      const scenario = teil?.audioSzenarien.find((item) => item.szenarioNummer === flatQuestion.szenarioNummer)
+
+      const contextSections: string[] = []
+      if (teil?.anweisung) {
+        contextSections.push(teil.anweisung)
+      }
+      if (scenario?.szenarioBeschreibung?.ort) {
+        contextSections.push(`Ort: ${scenario.szenarioBeschreibung.ort}`)
+      }
+      if (scenario?.szenarioBeschreibung?.hintergrundgeraeusche) {
+        contextSections.push(`Geräusche: ${scenario.szenarioBeschreibung.hintergrundgeraeusche}`)
+      }
+
+      return {
+        id: flatQuestion.globalIndex + 1,
+        type: "audio",
+        question: `Frage ${index + 1}`,
+        context: contextSections.join("\n\n")
+      }
+    })
+
+    return {
+      questions: navigationQuestions,
+      listeningParts: normalized.teile,
+      listeningQuestions: normalized.flatQuestions
+    }
   }
 }
 

@@ -264,11 +264,12 @@ export function ExamInterface({ level, module, onComplete, onBack }: ExamInterfa
       reviewData.answers = answers
     }
 
-    // Call API to store results if we have a queueId (for Lesen module only, Schreiben is handled above)
-    if (queueId && module === "Lesen") {
+    // Call API to store results if we have a queueId (for Lesen and Hören modules, Schreiben is handled above)
+    if (queueId && (module === "Lesen" || module === "Hören")) {
       try {
         console.log(`Submitting ${module} exam results to API...`)
-        const response = await fetch(`https://usncnfhlvb.execute-api.eu-central-1.amazonaws.com/live/read?queue_id=${queueId}`, {
+        const apiPath = module === "Lesen" ? "read" : "listen"
+        const response = await fetch(`https://usncnfhlvb.execute-api.eu-central-1.amazonaws.com/live/${apiPath}?queue_id=${queueId}`, {
           method: 'PATCH',
           headers: {
             'Content-Type': 'application/json',
@@ -333,11 +334,16 @@ export function ExamInterface({ level, module, onComplete, onBack }: ExamInterfa
                 ? "Generating personalized reading questions..."
                 : module === "Schreiben"
                 ? "Generating personalized writing questions..."
+                : module === "Hören"
+                ? "Generating personalized listening questions with audio..."
                 : "Loading exam questions..."
               }
             </p>
             <div className="text-sm text-muted-foreground">
-              This may take a few moments, please wait.
+              {module === "Hören"
+                ? "This may take several minutes due to audio generation. Please be patient."
+                : "This may take a few moments, please wait."
+              }
             </div>
           </div>
         </Card>

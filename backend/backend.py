@@ -4,7 +4,7 @@ import logging
 import traceback
 import uuid
 import boto3
-from db import get_job_result, get_write_exam_data, update_participant_results, update_write_participant_answers, create_exam_job
+from db import get_job_result, get_write_exam_data, update_read_participant_results, update_write_participant_answers, update_listen_participant_results, get_listen_job_result, create_exam_job, get_all_exam_jobs
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -162,7 +162,7 @@ def handle_patch_read(query_params, body):
     if not isinstance(is_pass, bool):
         return build_response(400, {'error': 'is_pass must be a boolean'})
 
-    success = update_participant_results(queue_id, participant_answers, score, is_pass)
+    success = update_read_participant_results(queue_id, participant_answers, score, is_pass)
 
     if not success:
         return build_response(404, {'error': 'Queue ID not found or already updated'})
@@ -262,6 +262,21 @@ def handle_write_evaluation(queue_id, body):
         'queue_id': queue_id,
     })
 
+def handle_get_listen(query_params):
+    """
+    Handle GET /listen endpoint - retrieve by queue_id
+    """
+    queue_id = query_params.get('queue_id')
+    if not queue_id:
+        return build_response(400, {'error': 'Missing required parameter: queue_id'})
+
+    result = get_listen_job_result(queue_id)
+
+    if result is None:
+        return build_response(404, {'error': 'Queue ID not found'})
+
+    return build_response(200, {'payload': result['payload']})
+
 def handle_put_listen(query_params):
     """
     Handle PUT /listen endpoint - create listening exam job and start ECS task
@@ -282,6 +297,62 @@ def handle_put_listen(query_params):
         'message': 'Listen generation job started',
         'queue_id': queue_id,
     })
+
+def handle_patch_listen(query_params, body):
+    """
+    Handle PATCH /listen endpoint - update participant results
+    """
+    queue_id = query_params.get('queue_id')
+    if not queue_id:
+        return build_response(400, {'error': 'Missing required parameter: queue_id'})
+
+    if not body:
+        return build_response(400, {'error': 'Missing request body'})
+
+    request_data = parse_request_body(body)
+
+    # Extract and validate required fields
+    participant_answers = request_data.get('participant_answers')
+    score = request_data.get('score')
+    is_pass = request_data.get('is_pass')
+
+    if participant_answers is None:
+        return build_response(400, {'error': 'Missing required field: participant_answers'})
+    if score is None:
+        return build_response(400, {'error': 'Missing required field: score'})
+    if is_pass is None:
+        return build_response(400, {'error': 'Missing required field: is_pass'})
+
+    # Validate data types
+    if not isinstance(participant_answers, list):
+        return build_response(400, {'error': 'participant_answers must be an array'})
+    if not isinstance(score, (int, float)):
+        return build_response(400, {'error': 'score must be a number'})
+    if not isinstance(is_pass, bool):
+        return build_response(400, {'error': 'is_pass must be a boolean'})
+
+    success = update_listen_participant_results(queue_id, participant_answers, score, is_pass)
+
+    if not success:
+        return build_response(404, {'error': 'Queue ID not found or already updated'})
+
+    return build_response(200, {
+        'message': 'Participant results updated successfully',
+        'queue_id': queue_id,
+        'score': score,
+        'is_pass': is_pass
+    })
+
+def handle_get_jobs():
+    """
+    Handle GET /jobs endpoint - retrieve all exam jobs
+    """
+    try:
+        jobs = get_all_exam_jobs()
+        return build_response(200, {'jobs': jobs})
+    except Exception as e:
+        logger.error(f"Failed to retrieve jobs: {e}")
+        return build_response(500, {'error': 'Failed to retrieve jobs'})
 
 def lambda_handler(event, context):
     """
@@ -314,8 +385,14 @@ def lambda_handler(event, context):
                 return handle_get_write(query_params)
             elif http_method == 'PUT' and path == '/write':
                 return handle_put_write(query_params, body)
+            elif http_method == 'GET' and path == '/listen':
+                return handle_get_listen(query_params)
             elif http_method == 'PUT' and path == '/listen':
                 return handle_put_listen(query_params)
+            elif http_method == 'PATCH' and path == '/listen':
+                return handle_patch_listen(query_params, body)
+            elif http_method == 'GET' and path == '/jobs':
+                return handle_get_jobs()
             else:
                 return build_response(404, {
                     'error': f'Endpoint not found: {http_method} {path}'
