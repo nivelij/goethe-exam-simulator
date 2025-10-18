@@ -51,7 +51,7 @@ If level not one of [A1, A2, B1, B2, C1, C2]:
               "frageNummer": 1,
               "frageText": "<Fragestellung>",
               "format": "<'Richtig/Falsch' oder 'Multiple-Choice'>",
-              "optionen": { "a": "Option A", "b": "Option B", "c": "Option C" },
+              "optionen": { "a": "Option A", "b": "Option B", "c": "Option C" } <ODER> {"Falsch": "Falsch", "Richtig": "Richtig"},
               "loesung": "<korrekte Antwort>"
             }
           ]
@@ -74,6 +74,8 @@ Each `audioSzenario` must simulate a **complete, coherent mini-story** following
 - B1: A neighbor asks for help moving furniture, leading to a polite negotiation about timing.
 - B2: A radio debate on city traffic policy with subtle disagreement and concessions.
 - C1/C2: Academic or professional exchanges with nuanced arguments and implied opinions.
+
+Use these examples as the basis to build the conversation
 
 ### 🚫 BAD EXAMPLES
 - Simple question-answer pairs ("Wie viel kostet das?" – "Zwei Euro.")
