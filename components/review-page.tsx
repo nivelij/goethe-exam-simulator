@@ -160,6 +160,10 @@ export function ReviewPage({
                              )}
                            </div>
 
+                           {szenario.encodedAudio && (
+                             <ListeningAudioPlayer encodedAudio={szenario.encodedAudio} />
+                           )}
+
                            <div className="space-y-4">
                              {szenario.fragen.map((frage) => {
                                const participantAnswerIndex = listeningAnswers?.[frage.globalIndex]
